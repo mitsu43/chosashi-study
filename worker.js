@@ -64,12 +64,12 @@ const today=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Tokyo',year:'num
 async function api(path,opt){const r=await fetch(path,Object.assign({headers:{'Content-Type':'application/json'}},opt||{}));const d=await r.json();if(!r.ok)throw new Error(d.error||'API error');return d}
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function driveView(v){v=String(v||'').trim();if(!v)return '';if(/^https?:/.test(v))return v;return 'https://drive.google.com/file/d/'+encodeURIComponent(v)+'/view?usp=sharing'}
-function card(q){const pdf=driveView(q.pdf_url);return '<article class="card"><div class="row"><div><h3>'+esc(q.year_label)+' 第'+esc(q.number)+'問</h3><div class="muted">'+esc(q.question_id)+'</div></div></div><div class="actions">'+(pdf?'<a class="btn secondary" target="_blank" href="'+esc(pdf)+'">PDF</a>':'<button class="secondary" disabled>PDF未登録</button>')+'<button class="secondary" disabled>動画未登録</button></div><div class="actions"><button data-answer="'+esc(q.question_id)+'" data-result="correct">正解</button><button class="danger" data-answer="'+esc(q.question_id)+'" data-result="wrong">不正解</button></div></article>'}
+function card(q){const pdf=driveView(q.pdf_url);const video=driveView(q.video_url);return '<article class="card"><div class="row"><div><h3>'+esc(q.year_label)+' 第'+esc(q.number)+'問</h3><div class="muted">'+esc(q.question_id)+'</div></div></div><div class="actions">'+(pdf?'<a class="btn secondary" target="_blank" href="'+esc(pdf)+'">PDFを開く</a>':'<button class="secondary" data-link="'+esc(q.question_id)+'" data-field="pdf_url">PDFを登録</button>')+(video?'<a class="btn secondary" target="_blank" href="'+esc(video)+'">動画を開く</a>':'<button class="secondary" data-link="'+esc(q.question_id)+'" data-field="video_url">動画を登録</button>')+'</div><div class="actions"><button data-answer="'+esc(q.question_id)+'" data-result="correct">正解</button><button class="danger" data-answer="'+esc(q.question_id)+'" data-result="wrong">不正解</button></div></article>'}
 function empty(msg){return '<div class="card"><p class="muted">'+esc(msg)+'</p></div>'}
 async function loadToday(){try{$('#today-status').textContent='読み込み中...';const t=await api('/api/daily-tasks?date='+today());$('#tasks').innerHTML=t.tasks.map(x=>'<label class="task"><input type="checkbox" data-task="'+esc(x.task_id)+'" '+(x.done?'checked':'')+'><span>'+esc(x.title)+'</span></label>').join('');const d=await api('/api/today');$('#today-list').innerHTML=d.questions.map(card).join('')||empty('今日の問題がありません。');$('#today-status').textContent='今日の出題 '+d.questions.length+'問'}catch(e){$('#today-status').innerHTML='<span class="error">'+esc(e.message)+'</span>'}}
 async function loadWrong(){try{const d=await api('/api/answers/wrong');$('#wrong-list').innerHTML=d.questions.map(card).join('')||empty('誤答はありません。')}catch(e){$('#wrong-list').innerHTML=empty(e.message)}}
 async function loadStats(){try{const d=await api('/api/stats');const t=d.totals;$('#stats-box').innerHTML='<div class="stat"><span class="muted">正答率</span><b>'+t.correct_rate+'%</b></div><div class="stat"><span class="muted">回答数</span><b>'+t.answers+'</b></div><div class="stat"><span class="muted">消化</span><b>'+t.answered_questions+'/'+t.total_questions+'</b></div><div class="stat"><span class="muted">連続</span><b>'+t.streak_days+'日</b></div>'}catch(e){$('#stats-box').innerHTML='<p class="error">'+esc(e.message)+'</p>'}}
-document.addEventListener('click',async e=>{const tab=e.target.closest('[data-tab]');if(tab){$$('.tab').forEach(x=>x.classList.toggle('active',x===tab));$$('.panel').forEach(x=>x.classList.toggle('active',x.id===tab.dataset.tab));if(tab.dataset.tab==='today')loadToday();if(tab.dataset.tab==='wrong')loadWrong();if(tab.dataset.tab==='stats')loadStats();return}const b=e.target.closest('[data-answer]');if(b){b.disabled=true;try{await api('/api/answers',{method:'POST',body:JSON.stringify({question_id:b.dataset.answer,result:b.dataset.result,answered_at:today()})});await loadToday()}catch(err){alert(err.message);b.disabled=false}}});
+document.addEventListener('click',async e=>{const tab=e.target.closest('[data-tab]');if(tab){$$('.tab').forEach(x=>x.classList.toggle('active',x===tab));$$('.panel').forEach(x=>x.classList.toggle('active',x.id===tab.dataset.tab));if(tab.dataset.tab==='today')loadToday();if(tab.dataset.tab==='wrong')loadWrong();if(tab.dataset.tab==='stats')loadStats();return}const link=e.target.closest('[data-link]');if(link){const label=link.dataset.field==='pdf_url'?'PDF':'動画';const url=prompt(link.dataset.link+' の'+label+' Google Drive URLまたはファイルIDを貼ってください');if(!url)return;link.disabled=true;try{await api('/api/questions/link',{method:'POST',body:JSON.stringify({question_id:link.dataset.link,field:link.dataset.field,url})});await loadToday()}catch(err){alert(err.message);link.disabled=false}return}const b=e.target.closest('[data-answer]');if(b){b.disabled=true;try{await api('/api/answers',{method:'POST',body:JSON.stringify({question_id:b.dataset.answer,result:b.dataset.result,answered_at:today()})});await loadToday()}catch(err){alert(err.message);b.disabled=false}}});
 document.addEventListener('change',async e=>{const c=e.target.closest('[data-task]');if(!c)return;try{await api('/api/daily-tasks',{method:'POST',body:JSON.stringify({task_date:today(),task_id:c.dataset.task,done:c.checked?1:0})})}catch(err){alert(err.message)}});
 $('#reload').addEventListener('click',loadToday);
 loadToday();
@@ -111,6 +111,10 @@ export default {
 
       if (request.method === 'POST' && path === '/api/answers') {
         return json(await postAnswer(request, env), 201);
+      }
+
+      if (request.method === 'POST' && path === '/api/questions/link') {
+        return json(await postQuestionLink(request, env), 201);
       }
 
       if (request.method === 'GET' && path === '/api/daily-tasks') {
@@ -289,6 +293,30 @@ async function postAnswer(request, env) {
   `).bind(questionId, result, answeredAt).run();
 
   return { ok: true, id: info.meta.last_row_id };
+}
+
+async function postQuestionLink(request, env) {
+  const body = await readJson(request);
+  const questionId = String(body.question_id || '').trim();
+  const field = String(body.field || '').trim();
+  const url = String(body.url || '').trim();
+
+  if (!questionId || !['pdf_url', 'video_url'].includes(field) || !url) {
+    throw new Error('question_id, field(pdf_url/video_url), url are required');
+  }
+
+  const exists = await env.DB.prepare('SELECT question_id FROM questions WHERE question_id = ?')
+    .bind(questionId)
+    .first();
+  if (!exists) {
+    throw new Error(`Unknown question_id: ${questionId}`);
+  }
+
+  await env.DB.prepare(`UPDATE questions SET ${field} = ? WHERE question_id = ?`)
+    .bind(url, questionId)
+    .run();
+
+  return { ok: true };
 }
 
 async function getDailyTasks(env, date) {
