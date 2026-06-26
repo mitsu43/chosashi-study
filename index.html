@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>土地家屋調査士 合格アプリ</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --green: #1f6130;
+      --green-2: #2f7a43;
+      --bg: #f4f7f2;
+      --card: #ffffff;
+      --line: #d9e2d7;
+      --text: #203127;
+      --muted: #617066;
+      --danger: #b0392d;
+      --ok: #1f6130;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Noto Sans JP", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    .app {
+      width: min(100%, 480px);
+      min-height: 100vh;
+      margin: 0 auto;
+      background: #fbfdf9;
+      box-shadow: 0 0 0 1px rgba(31, 97, 48, .08);
+    }
+
+    header {
+      padding: 18px 16px 12px;
+      background: var(--green);
+      color: #fff;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 800;
+    }
+
+    .sub {
+      margin: 4px 0 0;
+      color: rgba(255, 255, 255, .82);
+      font-size: 12px;
+    }
+
+    .tabs {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .tab {
+      appearance: none;
+      border: 0;
+      border-bottom: 3px solid transparent;
+      background: #fff;
+      color: var(--muted);
+      padding: 10px 4px 8px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .tab.active {
+      color: var(--green);
+      border-bottom-color: var(--green);
+    }
+
+    main { padding: 14px 12px 28px; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      margin: 0 0 12px;
+      box-shadow: 0 4px 12px rgba(22, 43, 27, .04);
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      color: var(--green);
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 800;
+    }
+
+    .muted { color: var(--muted); font-size: 13px; }
+    .small { font-size: 12px; }
+    .status { min-height: 20px; margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+    .error { color: var(--danger); }
+
+    button, .link-button {
+      min-height: 40px;
+      border: 1px solid var(--green);
+      border-radius: 8px;
+      background: var(--green);
+      color: #fff;
+      padding: 8px 12px;
+      font: inherit;
+      font-weight: 700;
+      text-decoration: none;
+      text-align: center;
+      cursor: pointer;
+    }
+
+    button.secondary, .link-button.secondary {
+      background: #fff;
+      color: var(--green);
+    }
+
+    button.danger {
+      border-color: var(--danger);
+      background: var(--danger);
+    }
+
+    button:disabled, .link-button.disabled {
+      border-color: #c9d3c8;
+      background: #edf1ec;
+      color: #849083;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    .question-actions {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .question-actions.full {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .task {
+      display: grid;
+      grid-template-columns: 26px 1fr;
+      gap: 8px;
+      align-items: start;
+      padding: 10px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .task:first-child { border-top: 0; }
+    input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--green); }
+    input[type="url"], input[type="text"] {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: inherit;
+      background: #fff;
+    }
+
+    .progress-track {
+      height: 10px;
+      border-radius: 999px;
+      background: #e4ebe2;
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0;
+      background: var(--green);
+      transition: width .2s ease;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .stat {
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f7faf6;
+    }
+
+    .stat b {
+      display: block;
+      font-size: 22px;
+      color: var(--green);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 8px 4px;
+      text-align: left;
+    }
+
+    th { color: var(--muted); font-weight: 700; }
+
+    .timeline {
+      display: grid;
+      gap: 8px;
+    }
+
+    .phase {
+      border-left: 4px solid var(--green);
+      padding: 8px 10px;
+      background: #f7faf6;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: none;
+    }
+
+    .modal.active { display: block; }
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, .62);
+    }
+
+    .modal-content {
+      position: absolute;
+      inset: 5vh 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-width: 720px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    .modal iframe {
+      width: 100%;
+      flex: 1;
+      border: 0;
+      border-radius: 6px;
+      background: #111;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>土地家屋調査士 合格アプリ</h1>
+      <p class="sub">過去問から逆算して、毎日10問と誤答復習を機械的に進める</p>
+    </header>
+
+    <nav class="tabs" aria-label="メイン">
+      <button class="tab active" data-tab="today">今日</button>
+      <button class="tab" data-tab="wrong">誤答</button>
+      <button class="tab" data-tab="stats">統計</button>
+      <button class="tab" data-tab="plan">計画</button>
+    </nav>
+
+    <main>
+      <section id="today" class="panel active">
+        <div class="card">
+          <div class="row">
+            <div>
+              <h2>今日のノルマ</h2>
+              <div id="today-date" class="muted"></div>
+            </div>
+            <button class="secondary" id="reload-today">更新</button>
+          </div>
+          <div id="task-list"></div>
+          <div class="progress-track" aria-label="今日の進捗">
+            <div class="progress-bar" id="task-progress"></div>
+          </div>
+          <p class="status" id="today-status"></p>
+        </div>
+        <div id="today-questions"></div>
+      </section>
+
+      <section id="wrong" class="panel">
+        <div class="card">
+          <div class="row">
+            <div>
+              <h2>誤答リスト</h2>
+              <p class="muted">最後に間違えた問題を優先表示します。</p>
+            </div>
+            <button class="secondary" id="reload-wrong">更新</button>
+          </div>
+        </div>
+        <div id="wrong-list"></div>
+      </section>
+
+      <section id="stats" class="panel">
+        <div class="card">
+          <div class="row">
+            <h2>統計</h2>
+            <button class="secondary" id="reload-stats">更新</button>
+          </div>
+          <div class="stats-grid" id="stats-summary"></div>
+        </div>
+        <div class="card">
+          <h2>年度別</h2>
+          <div id="stats-years"></div>
+        </div>
+      </section>
+
+      <section id="plan" class="panel">
+        <div class="card">
+          <h2>API設定</h2>
+          <p class="muted">デプロイ後のWorkers URLを入れると、このHTMLをどの端末で開いても同じD1に記録できます。</p>
+          <input id="api-base" type="url" placeholder="https://chosashi-study.example.workers.dev">
+          <div class="question-actions">
+            <button id="save-api-base">保存</button>
+            <button class="secondary" id="clear-api-base">解除</button>
+          </div>
+          <p class="status" id="api-status"></p>
+        </div>
+
+        <div class="card">
+          <h2>フェーズ</h2>
+          <div class="timeline">
+            <div class="phase"><b>Ph1 2026/6/27-2027/1/31</b><br><span class="muted">択一を回し、解説動画で答え合わせ。誤答を翌日へ戻す。</span></div>
+            <div class="phase"><b>Ph2 2027/2/1-2027/6/30</b><br><span class="muted">誤答問題を重点復習。正答率70%超えで次年度へ。</span></div>
+            <div class="phase"><b>Ph3 2027/7/1-2027/8/31</b><br><span class="muted">記述式、複素数、定規を毎日パターン化。</span></div>
+            <div class="phase"><b>Ph4 2027/9/1-2027/10/15</b><br><span class="muted">答練を本番形式。残った誤答だけ潰す。</span></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal" id="video-modal" aria-hidden="true">
+    <div class="modal-backdrop" id="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="row">
+        <h2 id="modal-title">解説動画</h2>
+        <button class="secondary" id="close-modal">閉じる</button>
+      </div>
+      <iframe id="video-frame" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      today: null,
+      tasks: [],
+      wrong: [],
+      stats: null,
+      apiBase: localStorage.getItem('chosashi_api_base') || '',
+    };
+
+    const $ = (selector) => document.querySelector(selector);
+    const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+
+    function apiUrl(path) {
+      const base = state.apiBase.replace(/\/$/, '');
+      if (base) return `${base}${path}`;
+      if (location.protocol.startsWith('http')) return path;
+      throw new Error('計画タブでWorkers API URLを設定してください。');
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(apiUrl(path), {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(options.headers || {}),
+        },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'APIエラー');
+      return data;
+    }
+
+    function todayText() {
+      return new Intl.DateTimeFormat('ja-JP', {
+        timeZone: 'Asia/Tokyo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        weekday: 'short',
+      }).format(new Date());
+    }
+
+    function todayIso() {
+      return new Intl.DateTimeFormat('sv-SE', {
+        timeZone: 'Asia/Tokyo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date());
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      }[char]));
+    }
+
+    function driveId(urlOrId) {
+      const value = String(urlOrId || '').trim();
+      if (!value) return '';
+      const match = value.match(/\/d\/([^/]+)/) || value.match(/[?&]id=([^&]+)/);
+      return match ? match[1] : value;
+    }
+
+    function drivePreviewUrl(urlOrId) {
+      const id = driveId(urlOrId);
+      return id ? `https://drive.google.com/file/d/${encodeURIComponent(id)}/preview` : '';
+    }
+
+    function driveViewUrl(urlOrId) {
+      const value = String(urlOrId || '').trim();
+      if (!value) return '';
+      if (/^https?:\/\//.test(value)) return value;
+      return `https://drive.google.com/file/d/${encodeURIComponent(value)}/view?usp=sharing`;
+    }
+
+    function questionCard(question, mode = 'today') {
+      const title = `${question.year_label} 第${question.number}問`;
+      const videoDisabled = question.video_url ? '' : 'disabled';
+      const pdfUrl = driveViewUrl(question.pdf_url);
+      const pdfClass = pdfUrl ? 'link-button secondary' : 'link-button secondary disabled';
+      return `
+        <article class="card">
+          <div class="row">
+            <div>
+              <h3>${escapeHtml(title)}</h3>
+              <div class="muted">${escapeHtml(question.question_id)} / ${question.type === 'kijutsu' ? '記述式' : '択一式'}</div>
+            </div>
+            ${question.wrong_count ? `<div class="muted small">誤答 ${question.wrong_count}回</div>` : ''}
+          </div>
+          <div class="question-actions full">
+            <button class="secondary" data-video="${escapeHtml(question.video_url || '')}" data-title="${escapeHtml(title)}" ${videoDisabled}>解説動画</button>
+            <a class="${pdfClass}" href="${escapeHtml(pdfUrl)}" target="_blank" rel="noopener">問題PDF</a>
+          </div>
+          <div class="question-actions">
+            <button data-answer="${escapeHtml(question.question_id)}" data-result="correct">正解</button>
+            <button class="danger" data-answer="${escapeHtml(question.question_id)}" data-result="wrong">不正解</button>
+          </div>
+        </article>
+      `;
+    }
+
+    async function loadToday() {
+      $('#today-date').textContent = todayText();
+      $('#today-status').textContent = '読み込み中...';
+      try {
+        const [tasks, today] = await Promise.all([
+          api(`/api/daily-tasks?date=${todayIso()}`),
+          api('/api/today'),
+        ]);
+        state.tasks = tasks.tasks;
+        state.today = today;
+        renderTasks();
+        $('#today-questions').innerHTML = today.questions.map((q) => questionCard(q)).join('') || emptyCard('今日の問題がありません。');
+        $('#today-status').textContent = `今日の出題 ${today.questions.length}問`;
+      } catch (error) {
+        $('#today-status').innerHTML = `<span class="error">${escapeHtml(error.message)}</span>`;
+      }
+    }
+
+    function renderTasks() {
+      $('#task-list').innerHTML = state.tasks.map((task) => `
+        <label class="task">
+          <input type="checkbox" data-task="${escapeHtml(task.task_id)}" ${task.done ? 'checked' : ''}>
+          <span>${escapeHtml(task.title)}</span>
+        </label>
+      `).join('');
+      const done = state.tasks.filter((task) => task.done).length;
+      const rate = state.tasks.length ? Math.round((done / state.tasks.length) * 100) : 0;
+      $('#task-progress').style.width = `${rate}%`;
+    }
+
+    async function loadWrong() {
+      $('#wrong-list').innerHTML = emptyCard('読み込み中...');
+      try {
+        const data = await api('/api/answers/wrong');
+        state.wrong = data.questions;
+        $('#wrong-list').innerHTML = data.questions.map((q) => questionCard(q, 'wrong')).join('') || emptyCard('直近30日の誤答はありません。');
+      } catch (error) {
+        $('#wrong-list').innerHTML = emptyCard(error.message, true);
+      }
+    }
+
+    async function loadStats() {
+      $('#stats-summary').innerHTML = '';
+      $('#stats-years').innerHTML = emptyCard('読み込み中...');
+      try {
+        const data = await api('/api/stats');
+        state.stats = data;
+        const total = data.totals;
+        $('#stats-summary').innerHTML = `
+          ${statBox('正答率', `${total.correct_rate}%`)}
+          ${statBox('回答数', total.answers)}
+          ${statBox('消化問題', `${total.answered_questions}/${total.total_questions}`)}
+          ${statBox('連続日数', `${total.streak_days}日`)}
+        `;
+        $('#stats-years').innerHTML = `
+          <table>
+            <thead><tr><th>年度</th><th>回答</th><th>正解</th><th>率</th></tr></thead>
+            <tbody>
+              ${data.by_year.map((row) => `
+                <tr>
+                  <td>${escapeHtml(row.year_label)}</td>
+                  <td>${row.attempts || 0}</td>
+                  <td>${row.correct || 0}</td>
+                  <td>${row.rate || 0}%</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      } catch (error) {
+        $('#stats-years').innerHTML = emptyCard(error.message, true);
+      }
+    }
+
+    function statBox(label, value) {
+      return `<div class="stat"><span class="muted">${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`;
+    }
+
+    function emptyCard(message, isError = false) {
+      return `<div class="card"><p class="${isError ? 'error' : 'muted'}">${escapeHtml(message)}</p></div>`;
+    }
+
+    async function saveAnswer(questionId, result) {
+      await api('/api/answers', {
+        method: 'POST',
+        body: JSON.stringify({ question_id: questionId, result, answered_at: todayIso() }),
+      });
+      await Promise.all([loadToday(), loadWrong(), loadStats()]);
+    }
+
+    async function saveTask(taskId, done) {
+      await api('/api/daily-tasks', {
+        method: 'POST',
+        body: JSON.stringify({ task_date: todayIso(), task_id: taskId, done: done ? 1 : 0 }),
+      });
+      const task = state.tasks.find((item) => item.task_id === taskId);
+      if (task) task.done = done ? 1 : 0;
+      renderTasks();
+    }
+
+    function openVideo(urlOrId, title) {
+      const url = drivePreviewUrl(urlOrId);
+      if (!url) return;
+      $('#modal-title').textContent = title || '解説動画';
+      $('#video-frame').src = url;
+      $('#video-modal').classList.add('active');
+      $('#video-modal').setAttribute('aria-hidden', 'false');
+    }
+
+    function closeVideo() {
+      $('#video-modal').classList.remove('active');
+      $('#video-modal').setAttribute('aria-hidden', 'true');
+      $('#video-frame').src = '';
+    }
+
+    document.addEventListener('click', async (event) => {
+      const tab = event.target.closest('[data-tab]');
+      if (tab) {
+        $$('.tab').forEach((node) => node.classList.toggle('active', node === tab));
+        $$('.panel').forEach((panel) => panel.classList.toggle('active', panel.id === tab.dataset.tab));
+        if (tab.dataset.tab === 'wrong') loadWrong();
+        if (tab.dataset.tab === 'stats') loadStats();
+        return;
+      }
+
+      const videoButton = event.target.closest('[data-video]');
+      if (videoButton && !videoButton.disabled) {
+        openVideo(videoButton.dataset.video, videoButton.dataset.title);
+        return;
+      }
+
+      const answerButton = event.target.closest('[data-answer]');
+      if (answerButton) {
+        answerButton.disabled = true;
+        try {
+          await saveAnswer(answerButton.dataset.answer, answerButton.dataset.result);
+        } catch (error) {
+          alert(error.message);
+          answerButton.disabled = false;
+        }
+      }
+    });
+
+    document.addEventListener('change', async (event) => {
+      const checkbox = event.target.closest('[data-task]');
+      if (!checkbox) return;
+      checkbox.disabled = true;
+      try {
+        await saveTask(checkbox.dataset.task, checkbox.checked);
+      } catch (error) {
+        alert(error.message);
+        checkbox.checked = !checkbox.checked;
+      } finally {
+        checkbox.disabled = false;
+      }
+    });
+
+    $('#reload-today').addEventListener('click', loadToday);
+    $('#reload-wrong').addEventListener('click', loadWrong);
+    $('#reload-stats').addEventListener('click', loadStats);
+    $('#close-modal').addEventListener('click', closeVideo);
+    $('#modal-backdrop').addEventListener('click', closeVideo);
+
+    $('#api-base').value = state.apiBase;
+    $('#save-api-base').addEventListener('click', () => {
+      state.apiBase = $('#api-base').value.trim().replace(/\/$/, '');
+      localStorage.setItem('chosashi_api_base', state.apiBase);
+      $('#api-status').textContent = '保存しました。';
+      loadToday();
+    });
+    $('#clear-api-base').addEventListener('click', () => {
+      state.apiBase = '';
+      $('#api-base').value = '';
+      localStorage.removeItem('chosashi_api_base');
+      $('#api-status').textContent = '解除しました。';
+    });
+
+    loadToday();
+  </script>
+</body>
+</html>
