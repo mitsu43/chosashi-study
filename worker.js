@@ -20,6 +20,17 @@ const questionOrder = `
   number
 `;
 
+const questionOrderQ = `
+  CASE substr(q.question_id, 1, 1)
+    WHEN 'H' THEN 1
+    WHEN 'R' THEN 2
+    WHEN 'K' THEN 3
+    ELSE 9
+  END,
+  CAST(substr(q.question_id, 2, 2) AS INTEGER),
+  q.number
+`;
+
 const INDEX_HTML = `<!doctype html>
 <html lang="ja">
 <head>
@@ -187,7 +198,7 @@ async function getWrongQuestions(env) {
     WHERE l.rn = 1
       AND l.result = 'wrong'
       AND date(l.answered_at) >= date('now', '-30 day')
-    ORDER BY c.last_wrong_at DESC, ${questionOrder}
+    ORDER BY c.last_wrong_at DESC, ${questionOrderQ}
   `).all();
   return { questions: results };
 }
@@ -354,7 +365,7 @@ async function getToday(env) {
       LEFT JOIN answers a ON a.question_id = q.question_id
       ${exclusion}
       GROUP BY q.question_id
-      ORDER BY attempts ASC, ${questionOrder}
+      ORDER BY attempts ASC, ${questionOrderQ}
       LIMIT ?
     `);
     const { results } = await statement.bind(...excluded, remaining).all();
