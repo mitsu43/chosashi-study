@@ -1,0 +1,3 @@
+question_id,subject,topic,source_pdf,start_page,end_page,output_pdf
+H1701,,,C:\path\to\source.pdf,1,2,H1701.pdf
+H1702,,,C:\path\to\source.pdf,3,4,H1702.pdf

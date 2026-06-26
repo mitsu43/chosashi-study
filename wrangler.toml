@@ -5,4 +5,4 @@ compatibility_date = "2024-01-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "chosashi-db"
-database_id = "PUT_D1_DATABASE_ID_HERE"
+database_id = "74f6d0a3-c0b7-4003-9bec-ecc65770fdf3"
