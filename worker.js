@@ -578,13 +578,19 @@ const STUDY_HTML = `<!doctype html>
     .memo-field textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;
       font:inherit;font-size:13px;min-height:56px;background:#fff;resize:vertical}
     iframe{width:100%;flex:1;border:0;border-radius:9px;background:#fff;min-height:70vh}
+    .aid-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;overflow:auto}
+    .aid-box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px}
+    .aid-box h3{margin:0 0 8px;color:var(--wakaba-deep)}
+    .aid-box ul{margin:8px 0 0;padding-left:18px}.aid-box li{margin:6px 0}
+    .cue{display:grid;grid-template-columns:74px 1fr;gap:8px;border-top:1px solid var(--line);padding:8px 0;font-size:13px}
+    .cue:first-child{border-top:0}.cue time{font-family:Consolas,monospace;color:var(--kincha);font-size:12px}
 
     @media(max-width:820px){
       .layout{grid-template-columns:1fr}
       .sidebar{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;padding:14px}
       .brand,.brand-sub{width:100%}.brand-sub{margin-bottom:10px}
       .nav-item{width:auto}.sidebar-foot{margin:0 0 0 auto;padding:0;border:0}
-      .main{padding:18px 14px}.grid-2,.grid-3,.os-board,.os-modules{grid-template-columns:1fr}
+      .main{padding:18px 14px}.grid-2,.grid-3,.os-board,.os-modules,.aid-grid{grid-template-columns:1fr}
     }
   </style>
 </head>
@@ -767,6 +773,39 @@ const state={tasks:[],today:null};
 
 const DEFAULT_TARGET='2035-04-03';
 function targetDate(){try{return localStorage.getItem('target_date')||DEFAULT_TARGET}catch(e){return DEFAULT_TARGET}}
+const STUDY_AIDS={
+  H1701:{
+    title:'H17 第1問 講義ノート',
+    status:'Geminiで動画から抽出した字幕・要点です。聞き取りづらい箇所は今後手直しできます。',
+    module:'権利前提モジュール（民法）',
+    topic:'共有',
+    cues:[
+      ['00:00','17年度問1解説。問題を確認する。'],
+      ['00:30','建物の共有がテーマ。保存行為、管理行為、変更行為の区別により、共有者が単独でできるか、どれだけの持分が必要かが変わる。'],
+      ['01:00','ABCが甲建物を3分の1ずつ共有。Dが権限なく占有している場合、明渡し請求は保存行為なので共有者1人からできる。'],
+      ['01:30','共有者Aは共有物全部を使用する権利を持つため、B・Cの了解がなくても、当然に明渡し請求されるわけではない。'],
+      ['02:00','AがGに建物を貸している場合も、Aは共有者として全部を使用する権利があるため、直ちに当然には明渡し請求できない。イとオはセットで押さえる。'],
+      ['02:30','ABCがEに貸していて、Eが賃料を長期不払い。賃貸借契約の解除が保存・管理・変更のどれかが問題になる。'],
+      ['03:00','共有物の賃貸借契約の解除は管理行為に当たるため、持分価格の過半数で決する。'],
+      ['03:30','A単独では持分3分の1にすぎず過半数に達しないため、単独で賃貸借契約を解除できない。'],
+      ['04:00','解除権行使は原則として全員から、または全員に対して行う点も併せて押さえる。Aが自己持分に抵当権を設定できるかを見る。'],
+      ['04:30','共有者は自己の持分を自由に処分できる。Aは自分の持分について抵当権を設定できる。'],
+    ],
+    exam:[
+      '共有物に対する保存行為・管理行為・変更/処分行為の区別と判断軸を押さえる。',
+      '第三者の不法占有に対する明渡し請求は保存行為として共有者単独で可能。',
+      '他の共有者やその承諾を受けた占有者に対して、自己持分のみを理由に当然には明渡し請求できない。',
+      '共有物の賃貸借契約の解除は管理行為であり、持分価格の過半数が必要。',
+      '各共有者は自己の共有持分を、他の共有者の同意なしに処分できる。',
+    ],
+    practical:[
+      '共有不動産の売却・賃貸・トラブル対応で、各共有者にどこまで権限があるか説明できる。',
+      '明渡し、賃貸借解除、持分処分で、単独・過半数・全員同意のどれが必要かを整理して顧客に伝える。',
+      '共有者間の合意形成が必要な場面を早めに見抜き、登記や測量の前提条件として確認する。',
+    ],
+    next:'次はこの形式でH1702以降も追加し、法規OSモジュール別に検索・復習できる形へ広げます。'
+  }
+};
 // ===== ヘルスパネル（毎日の健康状態を定量化）=====
 const EXAM_DATE='2027-10-17';   // 本試験（暫定：例年の第3日曜）
 const TARGET_LAPS=5;            // 目標周回
@@ -915,6 +954,7 @@ function qCard(q){
     +(q.wrong_count?'<div class="muted small">誤答'+q.wrong_count+'回</div>':'')+'</div>'
     +'<div class="q-actions">'
     +(q.video_url?'<button class="btn sec" data-video="'+esc(q.video_url)+'" data-title="'+title+'">解説動画</button>':'<button class="btn sec" disabled>動画なし</button>')
+    +(STUDY_AIDS[q.question_id]?'<button class="btn sec" data-aid="'+esc(q.question_id)+'">字幕・要点</button>':'')
     +(pdfUrl?'<a class="btn sec" href="'+esc(pdfUrl)+(pdfUrl.includes('/preview')?pdfPage:'')+'" target="_blank" rel="noopener">問題PDF</a>':'<button class="btn sec" disabled>PDFなし</button>')
     +'</div><div class="q-actions">'
     +'<button class="btn" data-answer="'+esc(q.question_id)+'" data-result="correct">正解</button>'
@@ -973,6 +1013,24 @@ function openMemo(qid){
   $('#memo-modal').classList.add('active');
 }
 
+function openStudyAid(qid){
+  const aid=STUDY_AIDS[qid];if(!aid)return;
+  $('#video-title').textContent=aid.title;
+  $('#video-frame').src='about:blank';
+  const rows=aid.cues.map(c=>'<div class="cue"><time>'+esc(c[0])+'</time><div>'+esc(c[1])+'</div></div>').join('');
+  const exam=aid.exam.map(x=>'<li>'+esc(x)+'</li>').join('');
+  const practical=aid.practical.map(x=>'<li>'+esc(x)+'</li>').join('');
+  const doc='<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>body{font-family:system-ui,\"Noto Sans JP\",sans-serif;margin:0;padding:18px;background:#fdfbf5;color:#3a3a38;line-height:1.7}.note{color:#8a8580;font-size:13px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.box{background:#fff;border:1px solid #ece5da;border-radius:12px;padding:14px}h2{margin:0 0 4px;color:#5d8a3f}h3{margin:0 0 8px;color:#5d8a3f}.cue{display:grid;grid-template-columns:74px 1fr;gap:8px;border-top:1px solid #ece5da;padding:8px 0;font-size:14px}.cue:first-child{border-top:0}time{font-family:Consolas,monospace;color:#c9a24b;font-size:12px}li{margin:6px 0}@media(max-width:720px){.grid{grid-template-columns:1fr}}</style></head><body>'
+    +'<h2>'+esc(aid.module)+'</h2><div class="note">'+esc(aid.status)+'</div>'
+    +'<div class="grid" style="margin-top:12px"><div class="box"><h3>字幕タイムライン</h3>'+rows+'</div>'
+    +'<div><div class="box"><h3>試験で問われるポイント</h3><ul>'+exam+'</ul></div>'
+    +'<div class="box" style="margin-top:12px"><h3>実務への接続</h3><ul>'+practical+'</ul></div></div></div>'
+    +'<div class="box" style="margin-top:12px"><h3>次の改善</h3><div>'+esc(aid.next)+'</div></div>'
+    +'</body></html>';
+  $('#video-frame').srcdoc=doc;
+  $('#video-modal').classList.add('active');
+}
+
 document.addEventListener('click',async e=>{
   const tab=e.target.closest('[data-tab]');
   if(tab){$$('.nav-item').forEach(x=>x.classList.toggle('active',x===tab));
@@ -998,6 +1056,8 @@ document.addEventListener('click',async e=>{
 
   const vid=e.target.closest('[data-video]');
   if(vid&&!vid.disabled){const url=drivePreview(vid.dataset.video);if(url){$('#video-title').textContent=vid.dataset.title||'解説動画';$('#video-frame').src=url;$('#video-modal').classList.add('active')}return}
+  const aid=e.target.closest('[data-aid]');
+  if(aid&&!aid.disabled){openStudyAid(aid.dataset.aid);return}
   if(e.target.closest('[data-close-video]')){$('#video-modal').classList.remove('active');$('#video-frame').src='';return}
 
   const ans=e.target.closest('[data-answer]');
