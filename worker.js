@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // 土地家屋調査士 合格アプリ — Cloudflare Worker
 // ============================================================
 
@@ -220,6 +220,9 @@ async function getStats(env) {
   const { results: days } = await env.DB.prepare(
     "SELECT DISTINCT substr(answered_at,1,10) AS day FROM answers ORDER BY day DESC LIMIT 400"
   ).all();
+  const firstRow = await env.DB.prepare(
+    "SELECT MIN(substr(answered_at,1,10)) AS d FROM answers"
+  ).first();
   const t = total.c || 0, c = correct.c || 0;
   return {
     totals: {
@@ -228,6 +231,7 @@ async function getStats(env) {
       answered_questions: answeredQ.c || 0,
       total_questions: totalQ.c || 0,
       streak_days: countStreak(days.map(r => r.day)),
+      first_answer_date: firstRow ? firstRow.d : null,
     },
     by_year: byYear,
     by_subject: bySubject,
@@ -250,12 +254,11 @@ async function postAnswer(request, env) {
 
 async function getDailyTasks(env, date) {
   const defaults = [
-    { task_id: 'watch_video',    title: '解説動画を1本見る' },
-    { task_id: 'solve_questions',title: '択一を10問解く' },
-    { task_id: 'review_wrong',   title: '誤答を見直す' },
-    { task_id: 'write_note',     title: '分からない点を1つ記録する' },
-  ];
-  const { results } = await env.DB.prepare('SELECT task_id, done FROM daily_tasks WHERE task_date=?').bind(date).all();
+    { task_id: 'solve_questions',title: '択一10問で法規OSの穴を探す' },
+    { task_id: 'review_wrong',   title: '誤答1問を「なぜ間違えたか」まで戻す' },
+    { task_id: 'write_note',     title: '実務メモを1件残す' },
+    { task_id: 'career_bridge',  title: '顧客説明・役所確認・現地確認のどれに使うか分類する' },
+  ];  const { results } = await env.DB.prepare('SELECT task_id, done FROM daily_tasks WHERE task_date=?').bind(date).all();
   const saved = new Map(results.map(r => [r.task_id, r.done]));
   return { task_date: date, tasks: defaults.map(t => ({ ...t, done: saved.get(t.task_id) || 0 })) };
 }
@@ -432,206 +435,583 @@ const STUDY_HTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>土地家屋調査士 合格アプリ</title>
+  <title>60歳独立準備室</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Shippori+Mincho:wght@500;700&display=swap" rel="stylesheet">
   <style>
-    :root{--green:#1f6130;--green-2:#2f7a43;--bg:#f4f7f2;--card:#ffffff;--line:#d9e2d7;--text:#203127;--muted:#617066;--danger:#b0392d}
+    :root{
+      --sakura:#e8a0b8; --sakura-soft:#f6dde6; --sakura-bg:#fcf4f7;
+      --wakaba:#8fb96a; --wakaba-deep:#5d8a3f; --wakaba-soft:#e6f0da;
+      --kincha:#c9a24b; --sumi:#3a3a38; --muted:#8a8580;
+      --cream:#fdfbf5; --card:#ffffff; --line:#ece5da; --danger:#c2673f;
+      --sidebar:#3f5236;
+    }
     *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--text);font-family:"Noto Sans JP",system-ui,sans-serif;line-height:1.6}
-    .app{width:min(100%,480px);min-height:100vh;margin:0 auto;background:#fbfdf9;box-shadow:0 0 0 1px rgba(31,97,48,.08)}
-    header{padding:18px 16px 12px;background:var(--green);color:#fff}
-    header a{color:rgba(255,255,255,.8);font-size:12px;text-decoration:none;border:1px solid rgba(255,255,255,.4);border-radius:6px;padding:4px 10px;float:right;margin-top:2px}
-    h1{margin:0;font-size:20px;font-weight:800}
-    .sub{margin:4px 0 0;color:rgba(255,255,255,.82);font-size:12px}
-    .tabs{position:sticky;top:0;z-index:20;display:grid;grid-template-columns:repeat(4,1fr);background:#fff;border-bottom:1px solid var(--line)}
-    .tab{appearance:none;border:0;border-bottom:3px solid transparent;background:#fff;color:var(--muted);padding:10px 4px 8px;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
-    .tab.active{color:var(--green);border-bottom-color:var(--green)}
-    main{padding:14px 12px 28px}.panel{display:none}.panel.active{display:block}
-    .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;margin:0 0 12px;box-shadow:0 4px 12px rgba(22,43,27,.04)}
-    .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
-    h2{margin:0 0 10px;font-size:16px;color:var(--green)}h3{margin:0;font-size:16px;font-weight:800}
-    .muted{color:var(--muted);font-size:13px}.small{font-size:12px}.status{min-height:20px;margin:8px 0 0;color:var(--muted);font-size:13px}.error{color:var(--danger)}
-    .tag{display:inline-block;font-size:11px;padding:2px 7px;border-radius:99px;background:#e8f0e9;color:var(--green);font-weight:700;margin:0 4px 4px 0}
-    button,.btn{min-height:40px;border:1px solid var(--green);border-radius:8px;background:var(--green);color:#fff;padding:8px 12px;font:inherit;font-weight:700;text-decoration:none;text-align:center;cursor:pointer;display:inline-block}
-    button.secondary,.btn.secondary{background:#fff;color:var(--green)}
-    button.danger{border-color:var(--danger);background:var(--danger)}
-    button:disabled,.btn.disabled{border-color:#c9d3c8;background:#edf1ec;color:#849083;cursor:not-allowed;pointer-events:none}
-    .q-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
-    .task{display:grid;grid-template-columns:26px 1fr;gap:8px;align-items:start;padding:10px 0;border-top:1px solid var(--line)}
+    body{margin:0;background:var(--sakura-bg);color:var(--sumi);
+      font-family:"Noto Sans JP",system-ui,sans-serif;line-height:1.6}
+    .layout{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+
+    /* ===== 左サイドバー ===== */
+    .sidebar{background:var(--sidebar);color:#e8ecdf;padding:22px 16px;
+      display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+    .brand{font-family:"Shippori Mincho",serif;font-size:18px;font-weight:700;
+      color:#fff;margin-bottom:4px;display:flex;align-items:center;gap:7px}
+    .brand .petal{color:var(--sakura);font-size:15px}
+    .brand-sub{font-size:11px;color:#a7c3b1;margin-bottom:24px;line-height:1.5}
+    .nav-item{display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:10px;
+      color:#cdd8c4;font-size:14px;font-weight:500;cursor:pointer;border:0;background:none;
+      width:100%;text-align:left;font-family:inherit;margin-bottom:3px;transition:all .15s}
+    .nav-item:hover{background:rgba(255,255,255,.07)}
+    .nav-item.active{background:rgba(232,160,184,.22);color:#fff}
+    .nav-item .ico{font-size:17px;width:20px;text-align:center}
+    .sidebar-foot{margin-top:auto;padding-top:18px;border-top:1px solid rgba(255,255,255,.1)}
+    .sidebar-foot a{color:#a7c3b1;font-size:13px;text-decoration:none;display:flex;align-items:center;gap:8px;padding:8px 13px}
+    .sidebar-foot a:hover{color:#fff}
+
+    /* ===== 右メイン ===== */
+    .main{padding:26px 30px 40px;max-width:1100px}
+    .hero{background:linear-gradient(135deg,#f6dde6 0%,#e6f0da 100%);
+      border-radius:16px;padding:24px 28px;margin-bottom:22px;border:2px solid #fff;
+      display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px}
+    .hero-left .countdown{font-family:"Shippori Mincho",serif;font-weight:700;font-size:38px;
+      color:var(--sumi);line-height:1.2}
+    .hero-left .countdown .num{color:var(--wakaba-deep)}
+    .hero-left .hero-sub{font-size:14px;color:#7a8a6a;margin:4px 0 0}
+    .hero-right{text-align:right}
+    .hero-right .big{font-size:30px;font-weight:700;color:var(--wakaba-deep);line-height:1.1}
+    .hero-right .big .unit{font-size:14px;color:var(--muted);font-weight:400}
+    .hero-right .lbl{font-size:12px;color:#7a8a6a}
+
+    .health-warn{border-radius:12px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:13px;font-size:14px}
+    .health-warn.lv-ok{background:var(--wakaba-soft);color:var(--wakaba-deep)}
+    .health-warn.lv-warn{background:#faf2dd;color:#8a6d1a}
+    .health-warn.lv-bad{background:#fae7df;color:#9c4a2a}
+    .health-warn .wico{font-size:22px}
+    .health-warn b{font-weight:700}
+    .health-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-bottom:14px}
+    .health-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 17px}
+    .health-head{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-bottom:8px}
+    .sig{width:11px;height:11px;border-radius:50%;background:#ccc;display:inline-block}
+    .sig.g{background:#6fae4a}.sig.y{background:#d9a82a}.sig.r{background:#c2673f}
+    .health-num{font-size:25px;font-weight:700;color:var(--wakaba-deep);line-height:1.2}
+    .health-num.warn{color:#b5862a}.health-num.bad{color:var(--danger)}
+    .health-num .hu{font-size:14px;color:var(--muted);font-weight:400}
+    .health-sub{font-size:12px;color:var(--muted);margin-top:3px}
+    .quota-card{margin-bottom:18px}
+    .quota-head{font-size:13px;color:var(--muted);margin-bottom:9px}
+    .quota-head b{color:var(--sumi);font-size:15px}
+    .quota-bar{display:flex;gap:5px}
+    .quota-seg{flex:1;height:10px;border-radius:5px;background:#efe9dd}
+    .quota-seg.fill{background:linear-gradient(90deg,var(--wakaba),var(--kincha))}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+    .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+    .col-span{grid-column:1 / -1}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;
+      box-shadow:0 2px 8px rgba(180,150,120,.05);margin-bottom:18px}
+    .os-board{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;margin-bottom:18px}
+    .os-title{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+    .os-title h2{font-family:"Shippori Mincho",serif;font-size:22px;color:var(--sumi);margin:0}
+    .os-title p{margin:4px 0 0;color:var(--muted);font-size:13px}
+    .os-modules{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .os-module{border:1px solid var(--line);border-radius:12px;padding:13px;background:linear-gradient(180deg,#fff,#fdfbf5)}
+    .os-module b{display:block;color:var(--wakaba-deep);font-size:14px;margin-bottom:4px}
+    .os-module span{display:block;color:var(--muted);font-size:12px;line-height:1.55}
+    .exit-list{display:grid;gap:9px}
+    .exit-item{border-left:4px solid var(--wakaba);background:var(--cream);border-radius:0 10px 10px 0;padding:10px 12px}
+    .exit-item b{display:block;font-size:13px;color:var(--sumi)}
+    .exit-item span{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+    .card-label{font-size:12px;color:var(--kincha);font-weight:700;letter-spacing:.05em;margin-bottom:13px;
+      display:flex;align-items:center;gap:7px}
+    h2{margin:0 0 4px;font-size:17px;color:var(--wakaba-deep);font-weight:700}
+    h3{margin:0;font-size:15px;font-weight:700}
+    .muted{color:var(--muted);font-size:13px}.small{font-size:12px}
+    .status{min-height:18px;margin:6px 0 0;color:var(--muted);font-size:13px}.error{color:var(--danger)}
+    .panel{display:none}.panel.active{display:block}
+
+    .tier{font-size:11px;padding:1px 9px;border-radius:99px;font-weight:700;margin-left:auto}
+    .tier-min{background:#f0ece2;color:#8a8055}
+    .tier-std{background:var(--wakaba-soft);color:var(--wakaba-deep)}
+    .tier-ideal{background:var(--sakura-soft);color:#b25c7a}
+    .task{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line);
+      font-size:14px;cursor:pointer}
     .task:first-child{border-top:0}
-    input[type=checkbox]{width:20px;height:20px;accent-color:var(--green)}
-    .progress-track{height:10px;border-radius:999px;background:#e4ebe2;overflow:hidden;margin-top:8px}
-    .progress-bar{height:100%;width:0;background:var(--green);transition:width .2s}
-    .stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-    .stat{padding:10px;border:1px solid var(--line);border-radius:8px;background:#f7faf6}
-    .stat b{display:block;font-size:22px;color:var(--green)}
+    .check{width:21px;height:21px;border:2px solid var(--wakaba);border-radius:6px;flex:0 0 auto;
+      display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:14px;transition:all .15s}
+    .task.done .check{background:var(--kincha);border-color:var(--kincha)}
+    .task.done .task-text{color:var(--muted);text-decoration:line-through}
+    .progress-track{height:9px;border-radius:99px;background:#efe9dd;overflow:hidden;margin-top:14px}
+    .progress-bar{height:100%;width:0;background:linear-gradient(90deg,var(--wakaba),var(--kincha));transition:width .3s}
+
+    .memo-prompt{font-family:"Shippori Mincho",serif;font-size:14px;color:#9a8f80;
+      line-height:1.7;font-style:italic;margin-bottom:14px}
+    .memo-btn{display:block;width:100%;text-align:center;background:linear-gradient(135deg,#f6dde6,#e6f0da);
+      border:0;border-radius:11px;padding:13px;font:inherit;font-weight:700;color:var(--sumi);cursor:pointer}
+
+    .stat{background:var(--cream);border:1px solid var(--line);border-radius:12px;padding:15px 17px}
+    .stat-label{font-size:12px;color:var(--muted);margin-bottom:4px}
+    .stat b{display:block;font-size:28px;font-weight:700;color:var(--wakaba-deep);line-height:1.2}
+    .stat .unit{font-size:14px;color:var(--muted);font-weight:400}
+    .stat .sub{font-size:11px;color:var(--muted);margin-top:2px}
+
+    .q-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px;margin:0 0 12px}
+    .q-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+    .tag{display:inline-block;font-size:11px;padding:2px 9px;border-radius:99px;background:var(--wakaba-soft);
+      color:var(--wakaba-deep);font-weight:700;margin:5px 4px 0 0}
+    .btn{min-height:40px;border:1px solid var(--wakaba);border-radius:9px;background:var(--wakaba-deep);
+      color:#fff;padding:8px 14px;font:inherit;font-weight:700;text-align:center;text-decoration:none;
+      cursor:pointer;display:inline-block}
+    .btn.sec{background:#fff;color:var(--wakaba-deep)}
+    .btn.dan{background:var(--danger);border-color:var(--danger)}
+    .btn:disabled{border-color:#d8d2c6;background:#efeae0;color:#a59f93;cursor:not-allowed}
+    .q-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:11px}
     table{width:100%;border-collapse:collapse;font-size:13px}
-    th,td{border-bottom:1px solid var(--line);padding:8px 4px;text-align:left}th{color:var(--muted);font-weight:700}
-    .modal{position:fixed;inset:0;z-index:100;display:none}.modal.active{display:block}
-    .modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.62)}
-    .modal-content{position:absolute;inset:5vh 10px;display:flex;flex-direction:column;gap:8px;max-width:720px;margin:0 auto;background:#fff;border-radius:8px;padding:10px}
-    .modal iframe{width:100%;flex:1;border:0;border-radius:6px;background:#111}
+    th{text-align:left;color:var(--muted);font-weight:700;padding:7px 6px;border-bottom:1px solid var(--line)}
+    td{padding:7px 6px;border-bottom:1px solid var(--line)}
+
+    .modal{position:fixed;inset:0;z-index:100;display:none}.modal.active{display:flex;align-items:center;justify-content:center}
+    .modal-bg{position:absolute;inset:0;background:rgba(40,30,30,.6)}
+    .modal-box{position:relative;width:min(620px,92vw);max-height:90vh;background:var(--cream);
+      border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:11px;overflow-y:auto}
+    .modal-box.wide{width:min(900px,94vw);height:88vh}
+    .memo-field label{display:block;font-size:13px;color:var(--wakaba-deep);font-weight:700;margin:11px 0 5px}
+    .memo-field textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;
+      font:inherit;font-size:13px;min-height:56px;background:#fff;resize:vertical}
+    iframe{width:100%;flex:1;border:0;border-radius:9px;background:#fff;min-height:70vh}
+
+    @media(max-width:820px){
+      .layout{grid-template-columns:1fr}
+      .sidebar{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;padding:14px}
+      .brand,.brand-sub{width:100%}.brand-sub{margin-bottom:10px}
+      .nav-item{width:auto}.sidebar-foot{margin:0 0 0 auto;padding:0;border:0}
+      .main{padding:18px 14px}.grid-2,.grid-3,.os-board,.os-modules{grid-template-columns:1fr}
+    }
   </style>
 </head>
 <body>
-<div class="app">
-  <header>
-    <a href="/admin">管理</a>
-    <h1>土地家屋調査士 合格アプリ</h1>
-    <p class="sub">過去問から逆算して、毎日10問と誤答復習を機械的に進める</p>
-  </header>
-  <nav class="tabs">
-    <button class="tab active" data-tab="today">今日</button>
-    <button class="tab" data-tab="wrong">誤答</button>
-    <button class="tab" data-tab="stats">統計</button>
-    <button class="tab" data-tab="plan">計画</button>
-  </nav>
-  <main>
-    <section id="today" class="panel active">
-      <div class="card">
-        <div class="row"><div><h2>今日のノルマ</h2><div id="today-date" class="muted"></div></div><button class="secondary" id="reload-today">更新</button></div>
-        <div id="task-list"></div>
-        <div class="progress-track"><div class="progress-bar" id="task-progress"></div></div>
-        <p class="status" id="today-status"></p>
+<div class="layout">
+  <!-- ===== サイドバー ===== -->
+  <aside class="sidebar">
+    <div class="brand"><span class="petal">❀</span> 60歳独立準備室</div>
+    <div class="brand-sub">調査士セカンドキャリア作戦室</div>
+    <button class="nav-item active" data-tab="today"><span class="ico">▤</span> 今日の一手</button>
+    <button class="nav-item" data-tab="wrong"><span class="ico">✕</span> 誤答を潰す</button>
+    <button class="nav-item" data-tab="stats"><span class="ico">◆</span> キャリア資産</button>
+    <button class="nav-item" data-tab="plan"><span class="ico">▶</span> 60歳までの計画</button>
+    <div class="sidebar-foot">
+      <a href="/admin">⚙ 教材・問題の管理</a>
+    </div>
+  </aside>
+
+  <!-- ===== メイン ===== -->
+  <main class="main">
+    <div class="hero">
+      <div class="hero-left">
+        <div class="countdown" id="countdown">残り <span class="num">—</span></div>
+        <p class="hero-sub">❀ 60歳の独立まで。今日、仕事の武器を1つ増やす。</p>
       </div>
-      <div id="today-questions"></div>
+      <div class="hero-right">
+        <div class="big" id="hero-rate">—<span class="unit">%</span></div>
+        <div class="lbl">択一正答率（合格力）</div>
+      </div>
+    </div>
+
+    <!-- ヘルスパネル（毎日の健康状態）-->
+    <div id="health-warn" class="health-warn" style="display:none"></div>
+    <div class="health-grid">
+      <div class="health-card">
+        <div class="health-head"><span class="sig" id="sig-streak"></span>継続（活動）</div>
+        <div class="health-num" id="hp-streak">—<span class="hu">日連続</span></div>
+        <div class="health-sub" id="hp-streak-sub">今日やれば伸びる。途切れると0に戻る</div>
+      </div>
+      <div class="health-card">
+        <div class="health-head"><span class="sig" id="sig-balance"></span>貯金／借金（食事）</div>
+        <div class="health-num" id="hp-balance">—<span class="hu">問</span></div>
+        <div class="health-sub" id="hp-balance-sub">予定に対する実績の差</div>
+      </div>
+      <div class="health-card">
+        <div class="health-head"><span class="sig" id="sig-lap"></span>到達周回（理解）</div>
+        <div class="health-num" id="hp-lap">—<span class="hu">周見込</span></div>
+        <div class="health-sub" id="hp-lap-sub">今のペースでの本試験までの周回</div>
+      </div>
+    </div>
+    <div class="card quota-card">
+      <div class="quota-head">今日のノルマ <b id="quota-n">—</b>問 <span class="muted small" id="quota-formula"></span></div>
+      <div class="quota-bar" id="quota-bar"></div>
+      <div class="muted small" id="quota-done" style="margin-top:6px"></div>
+    </div>
+
+    <!-- 今日 -->
+    <section id="today" class="panel active">
+      <div class="os-board">
+        <div class="card" style="margin:0">
+          <div class="os-title">
+            <div>
+              <h2>法規OSを組み上げる</h2>
+              <p>暗記ではなく、土地・建物・境界を扱う判断回路を毎日1つ強くする。</p>
+            </div>
+            <span class="tier tier-ideal">60歳キャリア</span>
+          </div>
+          <div class="os-modules">
+            <div class="os-module"><b>① 権利前提（民法）</b><span>誰が所有し、誰が処分できるか。共有・相続・対抗要件を申請人判断へつなげる。</span></div>
+            <div class="os-module"><b>② 登記総論</b><span>登記所・登記官・登記簿・申請義務。システムの作法と却下リスクを読む。</span></div>
+            <div class="os-module"><b>③ 土地表示</b><span>一筆、地番、地目、地積、分筆、合筆。現地と図面と登記を接続する中心領域。</span></div>
+            <div class="os-module"><b>④ 建物・区分建物</b><span>建物認定、床面積、滅失、区分建物、敷地権。複雑な物を登記できる形へ整える。</span></div>
+          </div>
+        </div>
+        <div class="card" style="margin:0">
+          <div class="card-label">今日の出口</div>
+          <div class="exit-list">
+            <div class="exit-item"><b>試験出口</b><span>択一10問で、どのモジュールが問われたかを分類する。</span></div>
+            <div class="exit-item"><b>記述出口</b><span>申請人・順番・添付情報・図面にどう効くかを1つだけ言語化する。</span></div>
+            <div class="exit-item"><b>実務出口</b><span>顧客説明、役所確認、現地確認のどれに使う知識かをメモする。</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="card" style="margin:0">
+          <div class="card-label">▤ 今日の一手</div>
+          <div id="task-list"></div>
+          <div class="progress-track"><div class="progress-bar" id="task-progress"></div></div>
+          <p class="status" id="today-status"></p>
+        </div>
+        <div class="card" style="margin:0">
+          <div class="card-label">✎ 今日の実務メモ</div>
+          <div class="memo-prompt">「この論点、現場ではどう使う？ 顧客にどう説明する？ 法務局で何を確認する？」</div>
+          <button class="memo-btn" id="open-memo">＋ 実務メモを書く（将来の仕事ノートに変える）</button>
+          <p class="status" id="memo-status"></p>
+        </div>
+      </div>
+      <div class="card" style="margin-top:18px">
+        <div class="card-label">▦ 今日の問題</div>
+        <div id="today-questions" class="q-grid"><p class="muted">読み込み中…</p></div>
+      </div>
     </section>
+
+    <!-- 誤答 -->
     <section id="wrong" class="panel">
       <div class="card">
-        <div class="row"><div><h2>誤答リスト</h2><p class="muted">最後に間違えた問題を優先表示します。</p></div><button class="secondary" id="reload-wrong">更新</button></div>
+        <h2>誤答リスト</h2>
+        <p class="muted">最後に間違えた問題を優先表示。ここを潰すのが合格の最短ルート。</p>
       </div>
-      <div id="wrong-list"></div>
+      <div id="wrong-list" class="q-grid"></div>
     </section>
+
+    <!-- 資産 -->
     <section id="stats" class="panel">
       <div class="card">
-        <div class="row"><h2>統計</h2><button class="secondary" id="reload-stats">更新</button></div>
-        <div class="stats-grid" id="stats-summary"></div>
+        <div class="card-label">◆ キャリア資産</div>
+        <div class="grid-3" id="stats-summary"></div>
       </div>
-      <div class="card"><h2>年度別</h2><div id="stats-years"></div></div>
-      <div class="card"><h2>科目別</h2><div id="stats-subjects"></div></div>
+      <div class="grid-2">
+        <div class="card" style="margin:0"><div class="card-label">年度別の合格力</div><div id="stats-years"></div></div>
+        <div class="card" style="margin:0"><div class="card-label">科目別の合格力</div><div id="stats-subjects"></div></div>
+      </div>
     </section>
+
+    <!-- 計画 -->
     <section id="plan" class="panel">
       <div class="card">
-        <h2>フェーズ</h2>
-        <div style="display:grid;gap:8px">
-          <div style="border-left:4px solid var(--green);padding:8px 10px;background:#f7faf6;border-radius:0 8px 8px 0"><b>Ph1 2026/6/27-2027/1/31</b><br><span class="muted">択一を回し、解説動画で答え合わせ。誤答を翌日へ戻す。</span></div>
-          <div style="border-left:4px solid var(--green);padding:8px 10px;background:#f7faf6;border-radius:0 8px 8px 0"><b>Ph2 2027/2/1-2027/6/30</b><br><span class="muted">誤答問題を重点復習。正答率70%超えで次年度へ。</span></div>
-          <div style="border-left:4px solid var(--green);padding:8px 10px;background:#f7faf6;border-radius:0 8px 8px 0"><b>Ph3 2027/7/1-2027/8/31</b><br><span class="muted">記述式、複素数、定規を毎日パターン化。</span></div>
-          <div style="border-left:4px solid var(--green);padding:8px 10px;background:#f7faf6;border-radius:0 8px 8px 0"><b>Ph4 2027/9/1-2027/10/15</b><br><span class="muted">答練を本番形式。残った誤答だけ潰す。</span></div>
+        <div class="card-label">▶ 60歳までのフェーズ</div>
+        <div style="display:grid;gap:11px">
+          <div style="border-left:4px solid var(--sakura);padding:11px 14px;background:var(--sakura-bg);border-radius:0 10px 10px 0"><b>Ph1 〜2027/1</b> &nbsp;<span class="muted small">択一を回し、解説で答え合わせ。誤答を翌日へ戻す。</span></div>
+          <div style="border-left:4px solid var(--wakaba);padding:11px 14px;background:var(--wakaba-soft);border-radius:0 10px 10px 0"><b>Ph2 〜2027/6</b> &nbsp;<span class="muted small">誤答を重点復習。正答率70%超で次へ。</span></div>
+          <div style="border-left:4px solid var(--kincha);padding:11px 14px;background:#faf6ea;border-radius:0 10px 10px 0"><b>Ph3 〜2027/8</b> &nbsp;<span class="muted small">記述・複素数・定規を毎日パターン化。</span></div>
+          <div style="border-left:4px solid var(--wakaba-deep);padding:11px 14px;background:var(--wakaba-soft);border-radius:0 10px 10px 0"><b>Ph4 〜本試験</b> &nbsp;<span class="muted small">答練を本番形式。残った誤答だけ潰す。</span></div>
+          <div style="border-left:4px solid var(--danger);padding:11px 14px;background:#faf0ea;border-radius:0 10px 10px 0"><b>合格後〜60歳</b> &nbsp;<span class="muted small">実務メモを資産化。境界・測量・登記で食える自分へ。</span></div>
         </div>
       </div>
     </section>
   </main>
 </div>
+
+<!-- 実務メモ モーダル -->
+<div class="modal" id="memo-modal">
+  <div class="modal-bg" data-close-memo></div>
+  <div class="modal-box">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <h2>実務メモ</h2><button class="btn sec" data-close-memo>閉じる</button>
+    </div>
+    <div class="muted small" id="memo-context">過去問を解いて気づいたことを、未来の仕事の引き出しに変える。</div>
+    <div class="memo-field">
+      <label>📍 現場ではどこで使う？</label>
+      <textarea id="memo-genba" placeholder="例：境界確定後の分筆依頼。分筆線の測量と地積測量図の作成。"></textarea>
+      <label>💬 顧客にどう説明する？</label>
+      <textarea id="memo-kokyaku" placeholder="例：土地を分けて売るには分筆登記が必要。境界確定が先。"></textarea>
+      <label>⚠️ 見落とすと危ないこと</label>
+      <textarea id="memo-risk" placeholder="例：隣地の立会い・印が取れないと確定測量が進まない。"></textarea>
+      <label>🏛 役所・法務局で確認すること</label>
+      <textarea id="memo-yakusho" placeholder="例：分筆後の地番の振り方、地積測量図の様式を管轄法務局で確認。"></textarea>
+    </div>
+    <button class="btn" id="save-memo">この1件を実務資産にする</button>
+    <p class="status" id="memo-save-status"></p>
+    <div id="memo-history"></div>
+  </div>
+</div>
+
+<!-- 動画モーダル -->
 <div class="modal" id="video-modal">
-  <div class="modal-backdrop" id="modal-backdrop"></div>
-  <div class="modal-content">
-    <div class="row"><h2 id="modal-title">解説動画</h2><button class="secondary" id="close-modal">閉じる</button></div>
+  <div class="modal-bg" data-close-video></div>
+  <div class="modal-box wide">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <h2 id="video-title">解説動画</h2><button class="btn sec" data-close-video>閉じる</button>
+    </div>
     <iframe id="video-frame" allow="autoplay; encrypted-media" allowfullscreen></iframe>
   </div>
 </div>
+
 <script>
 const $=s=>document.querySelector(s);
 const $$=s=>Array.from(document.querySelectorAll(s));
 const state={tasks:[],today:null};
 
-function todayText(){return new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit',weekday:'short'}).format(new Date())}
+const DEFAULT_TARGET='2035-04-03';
+function targetDate(){try{return localStorage.getItem('target_date')||DEFAULT_TARGET}catch(e){return DEFAULT_TARGET}}
+// ===== ヘルスパネル（毎日の健康状態を定量化）=====
+const EXAM_DATE='2027-10-17';   // 本試験（暫定：例年の第3日曜）
+const TARGET_LAPS=5;            // 目標周回
+const TOTAL_Q=380;
+function daysBetween(a,b){return Math.ceil((b-a)/86400000)}
+function renderHealth(t){
+  const today=new Date(todayIso()+'T00:00:00+09:00');
+  const exam=new Date(EXAM_DATE+'T00:00:00+09:00');
+  const daysLeft=Math.max(1,daysBetween(today,exam));
+  const targetTotal=TOTAL_Q*TARGET_LAPS;
+  const quota=targetTotal/daysLeft;                 // 1日ノルマ
+  const quotaInt=Math.ceil(quota);
+
+  // 経過日数（初回回答日〜今日）。未回答なら0
+  let elapsed=0;
+  if(t.first_answer_date){
+    const f=new Date(t.first_answer_date+'T00:00:00+09:00');
+    elapsed=Math.max(0,daysBetween(f,today));
+  }
+  const done=t.answers||0;
+
+  // 今日の実績（localStorageで当日カウント）
+  const todayDone=todayAnswerCount();
+  const remain=Math.max(0,quotaInt-todayDone);
+
+  // 指標1: 継続
+  setSig('sig-streak', t.streak_days>0?'g':'r');
+  $('#hp-streak').innerHTML=t.streak_days+'<span class="hu">日連続</span>';
+  $('#hp-streak-sub').textContent=t.streak_days>0?('今日やれば'+(t.streak_days+1)+'日。途切れると0に戻る'):'今日が再スタート。1問でも解けば点灯';
+
+  // 指標2: 貯金/借金
+  const should=quota*elapsed;
+  const balance=Math.round(done-should);
+  const bEl=$('#hp-balance');
+  if(elapsed===0){
+    setSig('sig-balance','g');bEl.className='health-num';bEl.innerHTML='0<span class="hu">問</span>';
+    $('#hp-balance-sub').textContent='今日スタート。まずノルマ'+quotaInt+'問';
+  }else if(balance>=0){
+    setSig('sig-balance','g');bEl.className='health-num';bEl.innerHTML='+'+balance+'<span class="hu">問</span>';
+    $('#hp-balance-sub').textContent='予定'+Math.round(should)+'問に対し実績'+done+'問。貯金あり';
+  }else{
+    setSig('sig-balance',balance<-quotaInt*3?'r':'y');bEl.className='health-num '+(balance<-quotaInt*3?'bad':'warn');
+    bEl.innerHTML=balance+'<span class="hu">問</span>';
+    $('#hp-balance-sub').textContent='予定'+Math.round(should)+'問に対し実績'+done+'問。借金状態';
+  }
+
+  // 指標3: 到達周回
+  const lapEl=$('#hp-lap');
+  if(elapsed===0){
+    setSig('sig-lap','g');lapEl.className='health-num';lapEl.innerHTML='—<span class="hu">周見込</span>';
+    $('#hp-lap-sub').textContent='数日続けると見込みが出ます';
+  }else{
+    const pace=done/elapsed;
+    const projected=pace*daysLeft/TOTAL_Q;
+    const lap=Math.round(projected*10)/10;
+    const diff=Math.round((lap-TARGET_LAPS)*10)/10;
+    if(lap>=TARGET_LAPS){setSig('sig-lap','g');lapEl.className='health-num';}
+    else if(lap>=TARGET_LAPS-1){setSig('sig-lap','y');lapEl.className='health-num warn';}
+    else{setSig('sig-lap','r');lapEl.className='health-num bad';}
+    lapEl.innerHTML=lap+'<span class="hu">周見込</span>';
+    $('#hp-lap-sub').textContent='目標'+TARGET_LAPS+'周に'+(diff>=0?'+':'')+diff+'周。'+(lap>=TARGET_LAPS?'順調':'ペース不足');
+  }
+
+  // 警告帯
+  const warn=$('#health-warn');
+  if(remain<=0){
+    warn.style.display='flex';warn.className='health-warn lv-ok';
+    warn.innerHTML='<span class="wico">✓</span><div><div style="font-weight:700">今日のノルマ達成</div><div style="font-size:13px">今日'+todayDone+'問。この調子で貯金を作る</div></div>';
+  }else{
+    const debtDays=Math.round(remain/quota*10)/10;
+    warn.style.display='flex';warn.className='health-warn '+(remain>=quotaInt?'lv-bad':'lv-warn');
+    warn.innerHTML='<span class="wico">⚠</span><div><div style="font-weight:700">今日まだ'+remain+'問解いていない</div>'
+      +'<div style="font-size:13px">このまま寝ると借金が <b>'+remain+'問</b> 増え、5周ラインから <b>'+debtDays+'日分</b> 遠のく</div></div>';
+  }
+
+  // ノルマバー
+  $('#quota-n').textContent=quotaInt;
+  $('#quota-formula').textContent='（残り'+daysLeft+'日 ÷ '+targetTotal.toLocaleString()+'問）';
+  const segs=[];for(let i=0;i<quotaInt;i++)segs.push('<div class="quota-seg'+(i<todayDone?' fill':'')+'"></div>');
+  $('#quota-bar').innerHTML=segs.join('');
+  $('#quota-done').textContent='今日 '+todayDone+' / '+quotaInt+'問 完了';
+}
+function setSig(id,c){const e=$('#'+id);if(e)e.className='sig '+c}
+
+// 今日の解答数をlocalStorageで記録
+function todayAnswerCount(){
+  try{const o=JSON.parse(localStorage.getItem('daily_answer_count')||'{}');return o[todayIso()]||0}catch(e){return 0}
+}
+function bumpTodayAnswer(){
+  try{const o=JSON.parse(localStorage.getItem('daily_answer_count')||'{}');o[todayIso()]=(o[todayIso()]||0)+1;localStorage.setItem('daily_answer_count',JSON.stringify(o))}catch(e){}
+}
+
+function renderCountdown(){
+  const t=new Date(targetDate()+'T00:00:00+09:00');const now=new Date();
+  let months=(t.getFullYear()-now.getFullYear())*12+(t.getMonth()-now.getMonth());
+  if(now.getDate()>t.getDate())months--;
+  const y=Math.floor(months/12), m=months%12;
+  const days=Math.max(0,Math.ceil((t-now)/86400000));
+  $('#countdown').innerHTML=months>0?'残り <span class="num">'+y+'年'+m+'か月</span>':'残り <span class="num">'+days+'日</span>';
+}
 function todayIso(){return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())}
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function driveId(v){v=String(v||'').trim();if(!v)return '';const m=v.match(/\\/d\\/([^/]+)/)||v.match(/[?&]id=([^&]+)/);return m?m[1]:v}
 function drivePreview(v){const id=driveId(v);return id?'https://drive.google.com/file/d/'+encodeURIComponent(id)+'/preview':''}
-function driveView(v){v=String(v||'').trim();if(!v)return '';if(/^https?:\\/\\//.test(v))return v;return 'https://drive.google.com/file/d/'+encodeURIComponent(v)+'/view?usp=sharing'}
-function driveFileId(v){v=String(v||'').trim();const m=v.match(/\\/d\\/([^/]+)/)||v.match(/[?&]id=([^&]+)/);return m?m[1]:''}
-function pdfPageUrl(v,page){const p=parseInt(page,10);const id=driveFileId(v);if(id)return 'https://drive.google.com/uc?export=download&id='+encodeURIComponent(id)+(p?'#page='+p:'');const url=driveView(v);if(!url||!p)return url;return url.replace(/#.*$/,'')+'#page='+p}
-function pdfEmbedUrl(v,page){const id=driveFileId(v);if(id)return drivePreview(id);return pdfPageUrl(v,page)}
+function driveView(v){v=String(v||'').trim();if(!v)return '';if(/^https?:\\/\\//.test(v))return v;return 'https://drive.google.com/file/d/'+encodeURIComponent(v)+'/view'}
 
 async function api(path,opt){
   const r=await fetch(path,Object.assign({headers:{'Content-Type':'application/json'}},opt||{}));
   const d=await r.json();if(!r.ok)throw new Error(d.error||'APIエラー');return d;
 }
 
-function qCard(q){
-  const title=esc(q.year_label)+' 第'+esc(q.number)+'問';
-  const pdfUrl=pdfPageUrl(q.pdf_url,q.pdf_page);
-  const pdfEmbed=pdfEmbedUrl(q.pdf_url,q.pdf_page);
-  const subTag=q.subject?'<span class="tag">'+esc(q.subject)+'</span>':'';
-  const topTag=q.topic?'<span class="tag">'+esc(q.topic)+'</span>':'';
-  const wrongBadge=q.wrong_count?'<div class="muted small">誤答 '+q.wrong_count+'回</div>':'';
-  return '<article class="card"><div class="row"><div><h3>'+title+'</h3><div class="muted">'+esc(q.question_id)+'</div>'+subTag+topTag+'</div>'+wrongBadge+'</div>'
-    +'<div class="q-actions">'
-    +(q.video_url?'<button class="secondary" data-video="'+esc(q.video_url)+'" data-title="'+title+'">解説動画</button>':'<button class="secondary" disabled>動画なし</button>')
-    +(pdfEmbed?'<button class="secondary" data-pdf="'+esc(pdfEmbed)+'" data-pdf-open="'+esc(pdfUrl)+'" data-title="'+title+'">問題PDF</button>':'<button class="secondary" disabled>PDFなし</button>')
-    +'</div><div class="q-actions">'
-    +'<button data-answer="'+esc(q.question_id)+'" data-result="correct">正解</button>'
-    +'<button class="danger" data-answer="'+esc(q.question_id)+'" data-result="wrong">不正解</button>'
-    +'</div></article>';
-}
-
-function emptyCard(msg,err){return '<div class="card"><p class="'+(err?'error':'muted')+'">'+esc(msg)+'</p></div>'}
-function statBox(label,val){return '<div class="stat"><span class="muted">'+esc(label)+'</span><b>'+esc(String(val))+'</b></div>'}
+const TIER={watch_video:'std',solve_questions:'std',review_wrong:'std',write_note:'ideal'};
+const TIER_LABEL={min:'最低',std:'標準',ideal:'理想'};
+const TIER_CLASS={min:'tier-min',std:'tier-std',ideal:'tier-ideal'};
 
 async function loadToday(){
-  $('#today-date').textContent=todayText();
-  $('#today-status').textContent='読み込み中...';
+  $('#today-status').textContent='読み込み中…';
   try{
     const[tasks,today]=await Promise.all([api('/api/daily-tasks?date='+todayIso()),api('/api/today')]);
     state.tasks=tasks.tasks;state.today=today;
     renderTasks();
-    $('#today-questions').innerHTML=today.questions.map(qCard).join('')||emptyCard('今日の問題がありません。');
+    $('#today-questions').innerHTML=today.questions.map(qCard).join('')||'<p class="muted">今日の問題がありません。</p>';
     $('#today-status').textContent='今日の出題 '+today.questions.length+'問';
   }catch(e){$('#today-status').innerHTML='<span class="error">'+esc(e.message)+'</span>'}
 }
 
 function renderTasks(){
-  $('#task-list').innerHTML=state.tasks.map(t=>'<label class="task"><input type="checkbox" data-task="'+esc(t.task_id)+'" '+(t.done?'checked':'')+'><span>'+esc(t.title)+'</span></label>').join('');
+  $('#task-list').innerHTML=state.tasks.map(t=>{
+    const tier=TIER[t.task_id]||'std';
+    return '<div class="task '+(t.done?'done':'')+'" data-task="'+esc(t.task_id)+'">'
+      +'<span class="check">✓</span><span class="task-text">'+esc(t.title)+'</span>'
+      +'<span class="tier '+TIER_CLASS[tier]+'">'+TIER_LABEL[tier]+'</span></div>';
+  }).join('');
   const done=state.tasks.filter(t=>t.done).length;
   $('#task-progress').style.width=Math.round(done/Math.max(state.tasks.length,1)*100)+'%';
 }
 
+function qCard(q){
+  const title=esc(q.year_label)+' 第'+esc(q.number)+'問';
+  const pdfUrl=driveView(q.pdf_url);
+  const pdfPage=q.pdf_page?('#page='+q.pdf_page):'';
+  const sub=q.subject?'<span class="tag">'+esc(q.subject)+'</span>':'';
+  const top=q.topic?'<span class="tag">'+esc(q.topic)+'</span>':'';
+  return '<div class="q-card"><div style="display:flex;justify-content:space-between;align-items:flex-start">'
+    +'<div><h3>'+title+'</h3><div class="muted small">'+esc(q.question_id)+'</div>'+sub+top+'</div>'
+    +(q.wrong_count?'<div class="muted small">誤答'+q.wrong_count+'回</div>':'')+'</div>'
+    +'<div class="q-actions">'
+    +(q.video_url?'<button class="btn sec" data-video="'+esc(q.video_url)+'" data-title="'+title+'">解説動画</button>':'<button class="btn sec" disabled>動画なし</button>')
+    +(pdfUrl?'<a class="btn sec" href="'+esc(pdfUrl)+(pdfUrl.includes('/preview')?pdfPage:'')+'" target="_blank" rel="noopener">問題PDF</a>':'<button class="btn sec" disabled>PDFなし</button>')
+    +'</div><div class="q-actions">'
+    +'<button class="btn" data-answer="'+esc(q.question_id)+'" data-result="correct">正解</button>'
+    +'<button class="btn dan" data-answer="'+esc(q.question_id)+'" data-result="wrong">不正解</button>'
+    +'</div></div>';
+}
+
 async function loadWrong(){
-  $('#wrong-list').innerHTML=emptyCard('読み込み中...');
-  try{const d=await api('/api/answers/wrong');$('#wrong-list').innerHTML=d.questions.map(qCard).join('')||emptyCard('直近30日の誤答はありません。')}
-  catch(e){$('#wrong-list').innerHTML=emptyCard(e.message,true)}
+  $('#wrong-list').innerHTML='<p class="muted">読み込み中…</p>';
+  try{const d=await api('/api/answers/wrong');
+    $('#wrong-list').innerHTML=d.questions.map(qCard).join('')||'<p class="muted">直近30日の誤答はありません。</p>';
+  }catch(e){$('#wrong-list').innerHTML='<p class="error">'+esc(e.message)+'</p>'}
 }
 
 async function loadStats(){
   try{
     const d=await api('/api/stats');const t=d.totals;
-    $('#stats-summary').innerHTML=statBox('正答率',t.correct_rate+'%')+statBox('回答数',t.answers)+statBox('消化問題',t.answered_questions+'/'+t.total_questions)+statBox('連続日数',t.streak_days+'日');
-    $('#stats-years').innerHTML='<table><thead><tr><th>年度</th><th>回答</th><th>正解</th><th>率</th></tr></thead><tbody>'
-      +d.by_year.map(r=>'<tr><td>'+esc(r.year_label)+'</td><td>'+r.attempts+'</td><td>'+r.correct+'</td><td>'+(r.rate||0)+'%</td></tr>').join('')+'</tbody></table>';
+    $('#hero-rate').innerHTML=t.correct_rate+'<span class="unit">%</span>';
+    renderHealth(t);
+    const memoCount=memoList().length;
+    $('#stats-summary').innerHTML=
+      statBox('合格力',t.correct_rate+'<span class="unit">%</span>','択一正答率')
+     +statBox('実務資産',memoCount+'<span class="unit">件</span>','実務メモ累計')
+     +statBox('消化',t.answered_questions+'<span class="unit">/'+t.total_questions+'</span>','解いた問題')
+     +statBox('継続',t.streak_days+'<span class="unit">日</span>','連続学習')
+     +statBox('回答数',t.answers+'<span class="unit">回</span>','累計の解答')
+     +statBox('正解数',t.correct+'<span class="unit">回</span>','累計の正解');
+    $('#stats-years').innerHTML='<table><thead><tr><th>年度</th><th>回答</th><th>率</th></tr></thead><tbody>'
+      +d.by_year.map(r=>'<tr><td>'+esc(r.year_label)+'</td><td style="text-align:center">'+r.attempts+'</td><td style="text-align:center">'+(r.rate||0)+'%</td></tr>').join('')+'</tbody></table>';
     $('#stats-subjects').innerHTML=d.by_subject.length
-      ?'<table><thead><tr><th>科目</th><th>回答</th><th>率</th></tr></thead><tbody>'
-        +d.by_subject.map(r=>'<tr><td>'+esc(r.subject||'未分類')+'</td><td>'+r.attempts+'</td><td>'+(r.rate||0)+'%</td></tr>').join('')+'</tbody></table>'
-      :'<p class="muted">科目データがまだありません（管理画面で設定）。</p>';
+      ?'<table><tbody>'+d.by_subject.map(r=>'<tr><td>'+esc(r.subject||'未分類')+'</td><td style="text-align:right">'+(r.rate||0)+'%</td></tr>').join('')+'</tbody></table>'
+      :'<p class="muted small">科目データは管理画面で設定できます。</p>';
   }catch(e){$('#stats-summary').innerHTML='<p class="error">'+esc(e.message)+'</p>'}
+}
+function statBox(label,val,sub){return '<div class="stat"><div class="stat-label">'+label+'</div><b>'+val+'</b><div class="sub">'+sub+'</div></div>'}
+
+function memoList(){try{return JSON.parse(localStorage.getItem('jitsumu_memos')||'[]')}catch(e){return[]}}
+function saveMemo(m){const l=memoList();l.unshift(m);try{localStorage.setItem('jitsumu_memos',JSON.stringify(l))}catch(e){}}
+function renderMemoHistory(){
+  const l=memoList();
+  if(!l.length){$('#memo-history').innerHTML='';return}
+  $('#memo-history').innerHTML='<div class="card-label" style="margin-top:10px">これまでの実務資産（'+l.length+'件）</div>'
+    +l.slice(0,5).map(m=>'<div class="q-card" style="margin-bottom:8px"><div class="muted small">'+esc(m.date)+(m.question_id?' ・ '+esc(m.question_id):'')+'</div>'
+      +(m.genba?'<div class="small">📍 '+esc(m.genba)+'</div>':'')
+      +(m.kokyaku?'<div class="small">💬 '+esc(m.kokyaku)+'</div>':'')
+      +(m.risk?'<div class="small">⚠️ '+esc(m.risk)+'</div>':'')
+      +(m.yakusho?'<div class="small">🏛 '+esc(m.yakusho)+'</div>':'')
+      +'</div>').join('');
+}
+function openMemo(qid){
+  $('#memo-genba').value='';$('#memo-kokyaku').value='';$('#memo-risk').value='';$('#memo-yakusho').value='';
+  $('#memo-save-status').textContent='';
+  $('#memo-modal').dataset.qid=qid||'';
+  $('#memo-context').textContent=qid?('対象：'+qid):'過去問を解いて気づいたことを、未来の仕事の引き出しに変える。';
+  renderMemoHistory();
+  $('#memo-modal').classList.add('active');
 }
 
 document.addEventListener('click',async e=>{
   const tab=e.target.closest('[data-tab]');
-  if(tab){$$('.tab').forEach(x=>x.classList.toggle('active',x===tab));$$('.panel').forEach(x=>x.classList.toggle('active',x.id===tab.dataset.tab));if(tab.dataset.tab==='wrong')loadWrong();if(tab.dataset.tab==='stats')loadStats();return}
+  if(tab){$$('.nav-item').forEach(x=>x.classList.toggle('active',x===tab));
+    $$('.panel').forEach(x=>x.classList.toggle('active',x.id===tab.dataset.tab));
+    if(tab.dataset.tab==='wrong')loadWrong();if(tab.dataset.tab==='stats')loadStats();return}
+
+  const task=e.target.closest('[data-task]');
+  if(task){const id=task.dataset.task;const t=state.tasks.find(x=>x.task_id===id);if(!t)return;
+    const nd=t.done?0:1;t.done=nd;renderTasks();
+    try{await api('/api/daily-tasks',{method:'POST',body:JSON.stringify({task_date:todayIso(),task_id:id,done:nd})})}
+    catch(err){t.done=nd?0:1;renderTasks();alert(err.message)}return}
+
+  if(e.target.closest('#open-memo')){openMemo('');return}
+  if(e.target.closest('[data-close-memo]')){$('#memo-modal').classList.remove('active');return}
+  if(e.target.closest('#save-memo')){
+    const m={date:todayIso(),question_id:$('#memo-modal').dataset.qid||'',
+      genba:$('#memo-genba').value.trim(),kokyaku:$('#memo-kokyaku').value.trim(),
+      risk:$('#memo-risk').value.trim(),yakusho:$('#memo-yakusho').value.trim()};
+    if(!m.genba&&!m.kokyaku&&!m.risk&&!m.yakusho){$('#memo-save-status').innerHTML='<span class="error">1行でも書いてください。</span>';return}
+    saveMemo(m);$('#memo-save-status').textContent='実務資産に1件加えました。';
+    $('#memo-genba').value='';$('#memo-kokyaku').value='';$('#memo-risk').value='';$('#memo-yakusho').value='';
+    renderMemoHistory();return}
+
   const vid=e.target.closest('[data-video]');
-  if(vid&&!vid.disabled){const url=drivePreview(vid.dataset.video);if(url){$('#modal-title').textContent=vid.dataset.title||'解説動画';$('#video-frame').src=url;$('#video-modal').classList.add('active')}return}
-  const pdf=e.target.closest('[data-pdf]');
-  if(pdf&&!pdf.disabled){$('#modal-title').textContent=pdf.dataset.title||'問題PDF';$('#video-frame').src=pdf.dataset.pdf;$('#video-modal').classList.add('active');return}
+  if(vid&&!vid.disabled){const url=drivePreview(vid.dataset.video);if(url){$('#video-title').textContent=vid.dataset.title||'解説動画';$('#video-frame').src=url;$('#video-modal').classList.add('active')}return}
+  if(e.target.closest('[data-close-video]')){$('#video-modal').classList.remove('active');$('#video-frame').src='';return}
+
   const ans=e.target.closest('[data-answer]');
-  if(ans){ans.disabled=true;try{await api('/api/answers',{method:'POST',body:JSON.stringify({question_id:ans.dataset.answer,result:ans.dataset.result,answered_at:todayIso()})});await loadToday()}catch(err){alert(err.message);ans.disabled=false}}
+  if(ans){ans.disabled=true;
+    try{await api('/api/answers',{method:'POST',body:JSON.stringify({question_id:ans.dataset.answer,result:ans.dataset.result,answered_at:todayIso()})});
+      bumpTodayAnswer();
+      if(ans.dataset.result==='wrong'){openMemo(ans.dataset.answer)}
+      await loadToday();await loadStats();
+    }catch(err){alert(err.message);ans.disabled=false}}
 });
 
-document.addEventListener('change',async e=>{
-  const c=e.target.closest('[data-task]');if(!c)return;c.disabled=true;
-  try{await api('/api/daily-tasks',{method:'POST',body:JSON.stringify({task_date:todayIso(),task_id:c.dataset.task,done:c.checked?1:0})});const t=state.tasks.find(x=>x.task_id===c.dataset.task);if(t)t.done=c.checked?1:0;renderTasks()}
-  catch(err){alert(err.message);c.checked=!c.checked}finally{c.disabled=false}
-});
-
-$('#reload-today').addEventListener('click',loadToday);
-$('#reload-wrong').addEventListener('click',loadWrong);
-$('#reload-stats').addEventListener('click',loadStats);
-$('#close-modal').addEventListener('click',()=>{$('#video-modal').classList.remove('active');$('#video-frame').src=''});
-$('#modal-backdrop').addEventListener('click',()=>{$('#video-modal').classList.remove('active');$('#video-frame').src=''});
+renderCountdown();
 loadToday();
+loadStats();
 </script>
 </body>
 </html>`;
@@ -959,3 +1339,4 @@ initSubjects();initYears();loadQuestions();
 </script>
 </body>
 </html>`;
+
