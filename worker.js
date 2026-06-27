@@ -779,6 +779,14 @@ const STUDY_AIDS={
     status:'Geminiで動画から抽出した字幕・要点です。聞き取りづらい箇所は今後手直しできます。',
     module:'権利前提モジュール（民法）',
     topic:'共有',
+    pattern:'パターン分類：共有者の権限判定',
+    asked:'何が問われているか：**共有物について、各共有者が単独でできる行為か、持分価格の過半数が必要な行為か、全員同意が必要な行為かを判別できるか。**',
+    core:[
+      '**保存行為**：共有物を守る行為。各共有者が単独でできる。',
+      '**管理行為**：共有物の利用・収益方法を決める行為。持分価格の過半数で決める。',
+      '**変更・処分行為**：共有物そのものを大きく変える、または処分する行為。原則として全員同意が必要。',
+      '**自己持分の処分**：共有物全体ではなく自分の持分だけなら、各共有者が自由に処分できる。',
+    ],
     cues:[
       ['00:00','17年度問1解説。問題を確認する。'],
       ['00:30','建物の共有がテーマ。保存行為、管理行為、変更行為の区別により、共有者が単独でできるか、どれだけの持分が必要かが変わる。'],
@@ -792,11 +800,11 @@ const STUDY_AIDS={
       ['04:30','共有者は自己の持分を自由に処分できる。Aは自分の持分について抵当権を設定できる。'],
     ],
     exam:[
-      '共有物に対する保存行為・管理行為・変更/処分行為の区別と判断軸を押さえる。',
-      '第三者の不法占有に対する明渡し請求は保存行為として共有者単独で可能。',
-      '他の共有者やその承諾を受けた占有者に対して、自己持分のみを理由に当然には明渡し請求できない。',
-      '共有物の賃貸借契約の解除は管理行為であり、持分価格の過半数が必要。',
-      '各共有者は自己の共有持分を、他の共有者の同意なしに処分できる。',
+      '**第三者の不法占有に対する明渡し請求**は、共有物を守るための保存行為なので、共有者単独でできる。',
+      '**共有者本人や共有者から使用を許された者**に対しては、単純に「了解がない」だけで当然に明渡し請求できるわけではない。',
+      '**共有物の賃貸借契約の解除**は管理行為。持分価格の過半数が必要で、3分の1のA単独ではできない。',
+      '**自己の共有持分への抵当権設定**は、自分の持分の処分なので単独でできる。',
+      'この問題は、結論暗記ではなく、各肢を**保存・管理・変更/処分・自己持分処分**に仕分ける問題。',
     ],
     practical:[
       '共有不動産の売却・賃貸・トラブル対応で、各共有者にどこまで権限があるか説明できる。',
@@ -1013,15 +1021,18 @@ function openMemo(qid){
   $('#memo-modal').classList.add('active');
 }
 
+function aidText(v){return esc(v).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')}
 function openStudyAid(qid){
   const aid=STUDY_AIDS[qid];if(!aid)return;
   $('#video-title').textContent=aid.title;
   $('#video-frame').src='about:blank';
-  const rows=aid.cues.map(c=>'<div class="cue"><time>'+esc(c[0])+'</time><div>'+esc(c[1])+'</div></div>').join('');
-  const exam=aid.exam.map(x=>'<li>'+esc(x)+'</li>').join('');
-  const practical=aid.practical.map(x=>'<li>'+esc(x)+'</li>').join('');
+  const rows=aid.cues.map(c=>'<div class="cue"><time>'+esc(c[0])+'</time><div>'+aidText(c[1])+'</div></div>').join('');
+  const core=(aid.core||[]).map(x=>'<li>'+aidText(x)+'</li>').join('');
+  const exam=aid.exam.map(x=>'<li>'+aidText(x)+'</li>').join('');
+  const practical=aid.practical.map(x=>'<li>'+aidText(x)+'</li>').join('');
   const doc='<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>body{font-family:system-ui,\"Noto Sans JP\",sans-serif;margin:0;padding:18px;background:#fdfbf5;color:#3a3a38;line-height:1.7}.note{color:#8a8580;font-size:13px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.box{background:#fff;border:1px solid #ece5da;border-radius:12px;padding:14px}h2{margin:0 0 4px;color:#5d8a3f}h3{margin:0 0 8px;color:#5d8a3f}.cue{display:grid;grid-template-columns:74px 1fr;gap:8px;border-top:1px solid #ece5da;padding:8px 0;font-size:14px}.cue:first-child{border-top:0}time{font-family:Consolas,monospace;color:#c9a24b;font-size:12px}li{margin:6px 0}@media(max-width:720px){.grid{grid-template-columns:1fr}}</style></head><body>'
     +'<h2>'+esc(aid.module)+'</h2><div class="note">'+esc(aid.status)+'</div>'
+    +'<div class="box" style="margin-top:12px"><h3>'+esc(aid.pattern||'パターン分類')+'</h3><div>'+aidText(aid.asked||'')+'</div>'+(core?'<ul>'+core+'</ul>':'')+'</div>'
     +'<div class="grid" style="margin-top:12px"><div class="box"><h3>字幕タイムライン</h3>'+rows+'</div>'
     +'<div><div class="box"><h3>試験で問われるポイント</h3><ul>'+exam+'</ul></div>'
     +'<div class="box" style="margin-top:12px"><h3>実務への接続</h3><ul>'+practical+'</ul></div></div></div>'
