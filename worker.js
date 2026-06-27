@@ -1021,7 +1021,7 @@ function openMemo(qid){
   $('#memo-modal').classList.add('active');
 }
 
-function aidText(v){return esc(v).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')}
+function aidText(v){return esc(v).split('**').map((p,i)=>i%2?'<strong>'+p+'</strong>':p).join('')}
 function openStudyAid(qid){
   const aid=STUDY_AIDS[qid];if(!aid)return;
   $('#video-title').textContent=aid.title;
