@@ -759,8 +759,16 @@ const STUDY_HTML = `<!doctype html>
 <div class="modal" id="video-modal">
   <div class="modal-bg" data-close-video></div>
   <div class="modal-box wide">
-    <div style="display:flex;align-items:center;justify-content:space-between">
-      <h2 id="video-title">解説動画</h2><button class="btn sec" data-close-video>閉じる</button>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <h2 id="video-title">解説動画</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <div id="tts-controls" style="display:none;gap:8px;flex-wrap:wrap">
+          <button class="btn sec" data-tts-start>読み上げ</button>
+          <button class="btn sec" data-tts-pause>一時停止/再開</button>
+          <button class="btn sec" data-tts-stop>停止</button>
+        </div>
+        <button class="btn sec" data-close-video>閉じる</button>
+      </div>
     </div>
     <iframe id="video-frame" allow="autoplay; encrypted-media" allowfullscreen></iframe>
   </div>
@@ -1021,11 +1029,50 @@ function openMemo(qid){
   $('#memo-modal').classList.add('active');
 }
 
+let currentSpeechText='';
+function plainAidText(v){return String(v||'').replaceAll('**','')}
 function aidText(v){return esc(v).split('**').map((p,i)=>i%2?'<strong>'+p+'</strong>':p).join('')}
+function buildAidSpeech(aid){
+  const lines=[
+    aid.title,
+    aid.module,
+    aid.topic?'論点：'+aid.topic:'',
+    aid.pattern||'',
+    plainAidText(aid.asked||''),
+    '重要ポイント',
+    ...(aid.core||[]).map(plainAidText),
+    '試験で問われるポイント',
+    ...aid.exam.map(plainAidText),
+    '字幕タイムライン',
+    ...aid.cues.map(c=>c[0]+'。'+plainAidText(c[1])),
+    '実務への接続',
+    ...aid.practical.map(plainAidText),
+  ];
+  return lines.filter(Boolean).join('。\n');
+}
+function setTtsVisible(on){
+  const box=$('#tts-controls');if(box)box.style.display=on?'flex':'none';
+}
+function stopSpeech(){try{speechSynthesis.cancel()}catch(e){}}
+function startSpeech(){
+  if(!currentSpeechText)return alert('読み上げる要点がありません。');
+  if(!('speechSynthesis' in window))return alert('このブラウザは読み上げに対応していません。');
+  stopSpeech();
+  const u=new SpeechSynthesisUtterance(currentSpeechText);
+  u.lang='ja-JP';u.rate=0.95;u.pitch=1;
+  speechSynthesis.speak(u);
+}
+function toggleSpeechPause(){
+  if(!('speechSynthesis' in window))return;
+  if(speechSynthesis.paused)speechSynthesis.resume();
+  else if(speechSynthesis.speaking)speechSynthesis.pause();
+}
 function openStudyAid(qid){
   const aid=STUDY_AIDS[qid];if(!aid)return;
   $('#video-title').textContent=aid.title;
   $('#video-frame').src='about:blank';
+  currentSpeechText=buildAidSpeech(aid);
+  setTtsVisible(true);
   const rows=aid.cues.map(c=>'<div class="cue"><time>'+esc(c[0])+'</time><div>'+aidText(c[1])+'</div></div>').join('');
   const core=(aid.core||[]).map(x=>'<li>'+aidText(x)+'</li>').join('');
   const exam=aid.exam.map(x=>'<li>'+aidText(x)+'</li>').join('');
@@ -1066,10 +1113,13 @@ document.addEventListener('click',async e=>{
     renderMemoHistory();return}
 
   const vid=e.target.closest('[data-video]');
-  if(vid&&!vid.disabled){const url=drivePreview(vid.dataset.video);if(url){$('#video-title').textContent=vid.dataset.title||'解説動画';$('#video-frame').src=url;$('#video-modal').classList.add('active')}return}
+  if(vid&&!vid.disabled){const url=drivePreview(vid.dataset.video);if(url){currentSpeechText='';stopSpeech();setTtsVisible(false);$('#video-title').textContent=vid.dataset.title||'解説動画';$('#video-frame').src=url;$('#video-modal').classList.add('active')}return}
   const aid=e.target.closest('[data-aid]');
   if(aid&&!aid.disabled){openStudyAid(aid.dataset.aid);return}
-  if(e.target.closest('[data-close-video]')){$('#video-modal').classList.remove('active');$('#video-frame').src='';return}
+  if(e.target.closest('[data-tts-start]')){startSpeech();return}
+  if(e.target.closest('[data-tts-pause]')){toggleSpeechPause();return}
+  if(e.target.closest('[data-tts-stop]')){stopSpeech();return}
+  if(e.target.closest('[data-close-video]')){stopSpeech();currentSpeechText='';setTtsVisible(false);$('#video-modal').classList.remove('active');$('#video-frame').src='';return}
 
   const ans=e.target.closest('[data-answer]');
   if(ans){ans.disabled=true;
