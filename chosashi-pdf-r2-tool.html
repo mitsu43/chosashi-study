@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>土地家屋調査士 PDF 5ページ分割・R2連携ツール</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root{--green:#1f6130;--bg:#f4f7f2;--card:#fff;--line:#d9e2d7;--text:#203127;--muted:#637064;--danger:#b0392d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:"Noto Sans JP",system-ui,sans-serif;line-height:1.6}
+.app{max-width:1080px;margin:0 auto;padding:24px 14px 56px}
+header{background:var(--green);color:#fff;padding:18px;border-radius:8px;margin-bottom:16px}
+h1{margin:0;font-size:22px}.lead{margin:6px 0 0;color:rgba(255,255,255,.85);font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;margin:12px 0}
+h2{margin:0 0 10px;font-size:16px;color:var(--green)}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}@media(max-width:760px){.grid{grid-template-columns:1fr}}
+label{display:block;font-size:12px;font-weight:700;margin:8px 0 4px;color:var(--muted)}
+input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:7px;font:inherit;background:#fff}
+textarea{min-height:120px;font-family:Consolas,monospace;font-size:12px}
+button,.btn{display:inline-flex;align-items:center;justify-content:center;min-height:40px;border:1px solid var(--green);border-radius:8px;background:var(--green);color:#fff;padding:8px 14px;font:inherit;font-weight:700;cursor:pointer;text-decoration:none}
+button.secondary,.btn.secondary{background:#fff;color:var(--green)}button:disabled{opacity:.55;cursor:not-allowed}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.muted{color:var(--muted);font-size:13px}.error{color:var(--danger)}
+table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px solid var(--line);padding:6px;text-align:left;vertical-align:top}th{color:var(--muted)}
+.mono{font-family:Consolas,monospace}.status{min-height:22px;margin-top:8px;font-size:13px}.pill{display:inline-block;background:#e8f0e9;color:var(--green);border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>土地家屋調査士 PDF 5ページ分割・R2連携ツール</h1>
+    <p class="lead">加工済みPDFを5ページ単位に分割し、Cloudflare R2アップロード用のファイル名・コマンド・D1登録CSV・Gemini確認プロンプトを作ります。</p>
+  </header>
+
+  <section class="card">
+    <h2>1. PDFと基本設定</h2>
+    <div class="grid">
+      <div><label>加工済みPDF</label><input id="pdf-file" type="file" accept="application/pdf"></div>
+      <div><label>年度</label><select id="year"></select></div>
+      <div><label>分割単位</label><input id="chunk-size" type="number" min="1" value="5"></div>
+      <div><label>R2公開ベースURL</label><input id="public-base" placeholder="https://pub-xxxx.r2.dev/chosashi"></div>
+      <div><label>R2オブジェクト接頭辞</label><input id="object-prefix" value="chosashi/takuitsu"></div>
+      <div><label>開始問題番号</label><input id="start-question" type="number" min="1" value="1"></div>
+    </div>
+    <div class="actions">
+      <button id="build">分割データを作成</button>
+      <button class="secondary" id="download-zip" disabled>分割PDF ZIPを保存</button>
+      <button class="secondary" id="download-csv" disabled>D1登録CSVを保存</button>
+      <button class="secondary" id="download-commands" disabled>R2アップロードコマンドを保存</button>
+    </div>
+    <p class="status" id="status"></p>
+  </section>
+
+  <section class="card">
+    <h2>2. 出力一覧</h2>
+    <p class="muted">1行が5ページPDFです。PDFをR2にアップロード後、CSVのURLをD1へ登録します。</p>
+    <div id="table-wrap"><p class="muted">まだ作成していません。</p></div>
+  </section>
+
+  <section class="card">
+    <h2>3. Gemini向け確認プロンプト</h2>
+    <p class="muted">分割PDFをGeminiに渡して、どの問題が含まれているか確認するときの指示です。</p>
+    <textarea id="prompt" readonly></textarea>
+    <div class="actions"><button class="secondary" id="copy-prompt">プロンプトをコピー</button></div>
+  </section>
+
+  <section class="card">
+    <h2>4. 運用手順</h2>
+    <ol>
+      <li>PDF加工ツールで、左右分割・白背景化したPDFを作る。</li>
+      <li>このツールで5ページ単位に分割してZIPを保存する。</li>
+      <li>ZIPを展開し、PDFをCloudflare R2へアップロードする。</li>
+      <li>生成されたD1登録CSVで、各問題のPDF URLを登録する。</li>
+      <li>ズレた問題だけ、管理画面のPDFリンクを修正する。</li>
+    </ol>
+  </section>
+</div>
+
+<script>
+const YEARS=['H17','H18','H19','H20','H21','H22','H23','H24','H25','H26','H27','H28','H29','H30','R01','R02','R03','R04','R05'];
+const $=s=>document.querySelector(s);
+let outputs=[];
+let zipBlob=null;
+const enc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+YEARS.forEach(y=>$('#year').insertAdjacentHTML('beforeend','<option>'+y+'</option>'));
+
+function questionId(year,n){return year+String(n).padStart(2,'0')}
+function csvEscape(v){v=String(v??'');return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}
+function download(name,blob){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+
+function buildPrompt(){
+  const y=$('#year').value;
+  return `あなたは土地家屋調査士試験の過去問整理担当です。
+
+添付PDFは、${y}年度の択一過去問を5ページ単位に分割したものです。
+以下だけを確認してください。
+
+1. このPDFに含まれる問題番号
+2. 各問題の科目
+3. 各問題の論点
+4. 問題途中で切れている場合は「次PDFへ続く」と明記
+
+出力形式はCSVのみ:
+question_id,subject,topic,note
+
+例:
+${questionId(y,1)},民法,意思表示・代理,このPDF内で完結
+
+注意:
+- 解説の全文要約は不要です。
+- 試験で問われる論点だけを短く書いてください。
+- 判断できない場合は推測せず「要確認」と書いてください。`;
+}
+
+async function build(){
+  const file=$('#pdf-file').files[0];
+  if(!file){$('#status').innerHTML='<span class="error">PDFを選択してください。</span>';return}
+  const year=$('#year').value;
+  const chunk=Math.max(1,parseInt($('#chunk-size').value,10)||5);
+  const prefix=$('#object-prefix').value.replace(/^\/+|\/+$/g,'');
+  const base=$('#public-base').value.replace(/\/+$/,'');
+  const startQ=Math.max(1,parseInt($('#start-question').value,10)||1);
+  $('#status').textContent='PDFを読み込み中...';
+  outputs=[];zipBlob=null;
+  const bytes=await file.arrayBuffer();
+  const src=await PDFLib.PDFDocument.load(bytes);
+  const pages=src.getPageCount();
+  const zip=new JSZip();
+  let q=startQ;
+  for(let start=0;start<pages;start+=chunk){
+    const end=Math.min(start+chunk,pages);
+    const out=await PDFLib.PDFDocument.create();
+    const copied=await out.copyPages(src,Array.from({length:end-start},(_,i)=>start+i));
+    copied.forEach(p=>out.addPage(p));
+    const outBytes=await out.save();
+    const seq=String(outputs.length+1).padStart(3,'0');
+    const filename=`${year}_${seq}_p${start+1}-${end}.pdf`;
+    const objectKey=`${prefix}/${year}/${filename}`;
+    const url=base?`${base}/${year}/${filename}`:objectKey;
+    const qid=questionId(year,q);
+    zip.file(filename,outBytes);
+    outputs.push({seq,year,start:start+1,end,filename,objectKey,url,question_id:qid,pdf_page:1});
+    q++;
+    $('#status').textContent=`分割中... ${end}/${pages}ページ`;
+  }
+  zipBlob=await zip.generateAsync({type:'blob'});
+  render();
+  $('#download-zip').disabled=false;
+  $('#download-csv').disabled=false;
+  $('#download-commands').disabled=false;
+  $('#prompt').value=buildPrompt();
+  $('#status').innerHTML=`<span class="pill">完了</span> ${outputs.length}ファイルを作成しました。`;
+}
+
+function render(){
+  if(!outputs.length){$('#table-wrap').innerHTML='<p class="muted">まだ作成していません。</p>';return}
+  $('#table-wrap').innerHTML='<table><thead><tr><th>#</th><th>ページ</th><th>ファイル名</th><th>R2 key</th><th>D1登録予定</th></tr></thead><tbody>'
+    +outputs.map(o=>`<tr><td>${o.seq}</td><td>${o.start}-${o.end}</td><td class="mono">${enc(o.filename)}</td><td class="mono">${enc(o.objectKey)}</td><td class="mono">${enc(o.question_id)} -> ${enc(o.url)}</td></tr>`).join('')
+    +'</tbody></table>';
+}
+
+function makeCsv(){
+  const lines=['question_id,pdf_url,pdf_page,note'];
+  for(const o of outputs)lines.push([o.question_id,o.url,o.pdf_page,`${o.year} ${o.start}-${o.end}ページ分割PDF`].map(csvEscape).join(','));
+  return lines.join('\r\n');
+}
+
+function makeCommands(){
+  const bucket='YOUR_BUCKET_NAME';
+  const lines=['# Cloudflare R2 upload commands','# バケット名を変更して、ZIP展開後のフォルダで実行してください。'];
+  for(const o of outputs)lines.push(`npx wrangler r2 object put ${bucket}/${o.objectKey} --file "${o.filename}"`);
+  return lines.join('\r\n');
+}
+
+$('#build').addEventListener('click',()=>build().catch(e=>{$('#status').innerHTML='<span class="error">'+enc(e.message)+'</span>'}));
+$('#download-zip').addEventListener('click',()=>download(`${$('#year').value}_split_5pages.zip`,zipBlob));
+$('#download-csv').addEventListener('click',()=>download(`${$('#year').value}_d1_pdf_links.csv`,new Blob([makeCsv()],{type:'text/csv;charset=utf-8'})));
+$('#download-commands').addEventListener('click',()=>download(`${$('#year').value}_r2_upload_commands.ps1`,new Blob([makeCommands()],{type:'text/plain;charset=utf-8'})));
+$('#copy-prompt').addEventListener('click',async()=>{await navigator.clipboard.writeText($('#prompt').value||buildPrompt());});
+$('#prompt').value=buildPrompt();
+</script>
+</body>
+</html>
