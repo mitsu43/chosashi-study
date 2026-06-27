@@ -545,6 +545,7 @@ function drivePreview(v){const id=driveId(v);return id?'https://drive.google.com
 function driveView(v){v=String(v||'').trim();if(!v)return '';if(/^https?:\\/\\//.test(v))return v;return 'https://drive.google.com/file/d/'+encodeURIComponent(v)+'/view?usp=sharing'}
 function driveFileId(v){v=String(v||'').trim();const m=v.match(/\\/d\\/([^/]+)/)||v.match(/[?&]id=([^&]+)/);return m?m[1]:''}
 function pdfPageUrl(v,page){const p=parseInt(page,10);const id=driveFileId(v);if(id)return 'https://drive.google.com/uc?export=download&id='+encodeURIComponent(id)+(p?'#page='+p:'');const url=driveView(v);if(!url||!p)return url;return url.replace(/#.*$/,'')+'#page='+p}
+function pdfEmbedUrl(v,page){const id=driveFileId(v);if(id)return drivePreview(id);return pdfPageUrl(v,page)}
 
 async function api(path,opt){
   const r=await fetch(path,Object.assign({headers:{'Content-Type':'application/json'}},opt||{}));
@@ -554,13 +555,14 @@ async function api(path,opt){
 function qCard(q){
   const title=esc(q.year_label)+' 第'+esc(q.number)+'問';
   const pdfUrl=pdfPageUrl(q.pdf_url,q.pdf_page);
+  const pdfEmbed=pdfEmbedUrl(q.pdf_url,q.pdf_page);
   const subTag=q.subject?'<span class="tag">'+esc(q.subject)+'</span>':'';
   const topTag=q.topic?'<span class="tag">'+esc(q.topic)+'</span>':'';
   const wrongBadge=q.wrong_count?'<div class="muted small">誤答 '+q.wrong_count+'回</div>':'';
   return '<article class="card"><div class="row"><div><h3>'+title+'</h3><div class="muted">'+esc(q.question_id)+'</div>'+subTag+topTag+'</div>'+wrongBadge+'</div>'
     +'<div class="q-actions">'
     +(q.video_url?'<button class="secondary" data-video="'+esc(q.video_url)+'" data-title="'+title+'">解説動画</button>':'<button class="secondary" disabled>動画なし</button>')
-    +(pdfUrl?'<a class="btn secondary" href="'+esc(pdfUrl)+'" target="_blank" rel="noopener">問題PDF</a>':'<button class="secondary" disabled>PDFなし</button>')
+    +(pdfEmbed?'<button class="secondary" data-pdf="'+esc(pdfEmbed)+'" data-pdf-open="'+esc(pdfUrl)+'" data-title="'+title+'">問題PDF</button>':'<button class="secondary" disabled>PDFなし</button>')
     +'</div><div class="q-actions">'
     +'<button data-answer="'+esc(q.question_id)+'" data-result="correct">正解</button>'
     +'<button class="danger" data-answer="'+esc(q.question_id)+'" data-result="wrong">不正解</button>'
@@ -612,6 +614,8 @@ document.addEventListener('click',async e=>{
   if(tab){$$('.tab').forEach(x=>x.classList.toggle('active',x===tab));$$('.panel').forEach(x=>x.classList.toggle('active',x.id===tab.dataset.tab));if(tab.dataset.tab==='wrong')loadWrong();if(tab.dataset.tab==='stats')loadStats();return}
   const vid=e.target.closest('[data-video]');
   if(vid&&!vid.disabled){const url=drivePreview(vid.dataset.video);if(url){$('#modal-title').textContent=vid.dataset.title||'解説動画';$('#video-frame').src=url;$('#video-modal').classList.add('active')}return}
+  const pdf=e.target.closest('[data-pdf]');
+  if(pdf&&!pdf.disabled){$('#modal-title').textContent=pdf.dataset.title||'問題PDF';$('#video-frame').src=pdf.dataset.pdf;$('#video-modal').classList.add('active');return}
   const ans=e.target.closest('[data-answer]');
   if(ans){ans.disabled=true;try{await api('/api/answers',{method:'POST',body:JSON.stringify({question_id:ans.dataset.answer,result:ans.dataset.result,answered_at:todayIso()})});await loadToday()}catch(err){alert(err.message);ans.disabled=false}}
 });
