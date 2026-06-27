@@ -543,7 +543,8 @@ function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 function driveId(v){v=String(v||'').trim();if(!v)return '';const m=v.match(/\\/d\\/([^/]+)/)||v.match(/[?&]id=([^&]+)/);return m?m[1]:v}
 function drivePreview(v){const id=driveId(v);return id?'https://drive.google.com/file/d/'+encodeURIComponent(id)+'/preview':''}
 function driveView(v){v=String(v||'').trim();if(!v)return '';if(/^https?:\\/\\//.test(v))return v;return 'https://drive.google.com/file/d/'+encodeURIComponent(v)+'/view?usp=sharing'}
-function pdfPageUrl(v,page){const url=driveView(v);const p=parseInt(page,10);if(!url||!p)return url;return url.replace(/#.*$/,'')+'#page='+p}
+function driveFileId(v){v=String(v||'').trim();const m=v.match(/\\/d\\/([^/]+)/)||v.match(/[?&]id=([^&]+)/);return m?m[1]:''}
+function pdfPageUrl(v,page){const p=parseInt(page,10);const id=driveFileId(v);if(id)return 'https://drive.google.com/uc?export=download&id='+encodeURIComponent(id)+(p?'#page='+p:'');const url=driveView(v);if(!url||!p)return url;return url.replace(/#.*$/,'')+'#page='+p}
 
 async function api(path,opt){
   const r=await fetch(path,Object.assign({headers:{'Content-Type':'application/json'}},opt||{}));
