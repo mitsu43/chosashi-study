@@ -616,9 +616,9 @@ const STUDY_HTML = `<!doctype html>
     #aid-content time{font-family:Consolas,monospace;color:#c9a24b;font-size:12px}
     #aid-content li{margin:6px 0}
     #aid-content .tts-unit{transition:background .15s}
-    #aid-content .tts-unit.tts-reading{background:#f3f5ea;border-radius:8px}
-    #aid-content .tts-hl{background:#e6eadc;color:#263326;border-radius:3px;font-weight:700}
-    #aid-content .tts-word{background:#c8d8a8;color:#1f351e;border-radius:3px;padding:0 2px;font-weight:900;box-shadow:0 0 0 1px #acc080}
+    #aid-content .tts-unit.tts-reading{background:transparent}
+    #aid-content .tts-hl{background:transparent;color:inherit;border-radius:0;font-weight:800}
+    #aid-content .tts-word{background:transparent;color:inherit;border-radius:0;padding:0;font-weight:900;box-shadow:none}
     @media(max-width:720px){#aid-content .grid{grid-template-columns:1fr}}
     .aid-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;overflow:auto}
     .aid-box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px}
@@ -832,6 +832,14 @@ const STUDY_AIDS={
     topic:'共有',
     pattern:'パターン分類：共有者の権限判定',
     asked:'何が問われているか：**共有物について、各共有者が単独でできる行為か、持分価格の過半数が必要な行為か、全員同意が必要な行為かを判別できるか。**',
+    image:[
+      'この問題は、1つの建物をA・B・Cが3分の1ずつ持っている場面を想像する。',
+      '共有者の権限判定とは、「Aひとりで動ける話か、A・Bなど過半数が必要か、A・B・C全員が必要か」を仕分けること。',
+      '持分価格とは、人数ではなく持っている割合の重み。3分の1ずつなら2人で3分の2となり、過半数になる。',
+      '保存行為とは、壊れた窓を直す、無断占有者を追い出すなど、共有物を守る行為。ひとりでできる。',
+      '管理行為とは、貸す、解除する、使い方を決めるなど、共有物の運用を決める行為。持分価格の過半数で決める。',
+      '変更・処分行為とは、建物を大きく改造する、売るなど、共有物そのものを大きく動かす行為。原則として全員同意が必要。',
+    ],
     core:[
       '**保存行為**：共有物を守る行為。各共有者が単独でできる。',
       '**管理行為**：共有物の利用・収益方法を決める行為。持分価格の過半数で決める。',
@@ -1074,6 +1082,7 @@ function openMemo(qid){
 
 function plainAidText(v){return String(v||'').replaceAll('**','')}
 function aidText(v){return esc(v).split('**').map((p,i)=>i%2?'<strong>'+p+'</strong>':p).join('')}
+function aidPlain(v){return esc(plainAidText(v))}
 function escText(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function ttsReadable(v){
   return plainAidText(v)
@@ -1202,12 +1211,16 @@ function openStudyAid(qid){
   aidBox.style.display='block';
   setTtsVisible(true);
   const rows=aid.cues.map(c=>'<div class="cue"><time>'+esc(c[0])+'</time><div>'+aidText(c[1])+'</div></div>').join('');
-  const core=(aid.core||[]).map(x=>'<li class="tts-unit" data-tts-text="'+ttsAttr(x)+'">'+aidText(x)+'</li>').join('');
-  const exam=aid.exam.map(x=>'<li class="tts-unit" data-tts-text="'+ttsAttr(x)+'">'+aidText(x)+'</li>').join('');
+  const image=(aid.image||[]).map(x=>'<li>'+aidPlain(x)+'</li>').join('');
+  const imageText=(aid.image||[]).join('');
+  const core=(aid.core||[]).map(x=>'<li class="tts-unit" data-tts-text="'+ttsAttr(x)+'">'+aidPlain(x)+'</li>').join('');
+  const exam=aid.exam.map(x=>'<li class="tts-unit" data-tts-text="'+ttsAttr(x)+'">'+aidPlain(x)+'</li>').join('');
   const practical=aid.practical.map(x=>'<li>'+aidText(x)+'</li>').join('');
-  const asked='<div class="tts-unit" data-tts-text="'+ttsAttr((aid.pattern||'パターン分類')+'。'+(aid.asked||''))+'">'+aidText(aid.asked||'')+'</div>';
-  const doc='<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>body{font-family:system-ui,\"Noto Sans JP\",sans-serif;margin:0;padding:18px;background:#fdfbf5;color:#3a3a38;line-height:1.7}.note{color:#8a8580;font-size:13px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.box{background:#fff;border:1px solid #ece5da;border-radius:12px;padding:14px}h2{margin:0 0 4px;color:#5d8a3f}h3{margin:0 0 8px;color:#5d8a3f}.cue{display:grid;grid-template-columns:74px 1fr;gap:8px;border-top:1px solid #ece5da;padding:8px 0;font-size:14px}.cue:first-child{border-top:0}time{font-family:Consolas,monospace;color:#c9a24b;font-size:12px}li{margin:6px 0}.tts-unit{transition:background .15s}.tts-unit.tts-reading{background:#f3f5ea;border-radius:8px}.tts-hl{background:#e6eadc;color:#263326;border-radius:3px;font-weight:700}.tts-word{background:#c8d8a8;color:#1f351e;border-radius:3px;padding:0 2px;font-weight:900;box-shadow:0 0 0 1px #acc080}@media(max-width:720px){.grid{grid-template-columns:1fr}}</style></head><body>'
+  const imageBox=image?'<div class="box" style="margin-top:12px"><h3>実際のイメージ</h3><div class="tts-unit" data-tts-text="'+ttsAttr('実際のイメージ。'+imageText)+'"><ul>'+image+'</ul></div></div>':'';
+  const asked='<div class="tts-unit" data-tts-text="'+ttsAttr((aid.pattern||'パターン分類')+'。'+(aid.asked||''))+'">'+aidPlain(aid.asked||'')+'</div>';
+  const doc='<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>body{font-family:system-ui,\"Noto Sans JP\",sans-serif;margin:0;padding:18px;background:#fdfbf5;color:#3a3a38;line-height:1.7}.note{color:#8a8580;font-size:13px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.box{background:#fff;border:1px solid #ece5da;border-radius:12px;padding:14px}h2{margin:0 0 4px;color:#5d8a3f}h3{margin:0 0 8px;color:#5d8a3f}.cue{display:grid;grid-template-columns:74px 1fr;gap:8px;border-top:1px solid #ece5da;padding:8px 0;font-size:14px}.cue:first-child{border-top:0}time{font-family:Consolas,monospace;color:#c9a24b;font-size:12px}li{margin:6px 0}.tts-unit{transition:background .15s}.tts-unit.tts-reading{background:transparent}.tts-hl{background:transparent;color:inherit;border-radius:0;font-weight:800}.tts-word{background:transparent;color:inherit;border-radius:0;padding:0;font-weight:900;box-shadow:none}@media(max-width:720px){.grid{grid-template-columns:1fr}}</style></head><body>'
     +'<h2>'+esc(aid.module)+'</h2><div class="note">'+esc(aid.status)+'</div>'
+    +imageBox
     +'<div class="box" style="margin-top:12px"><h3>'+esc(aid.pattern||'パターン分類')+'</h3>'+asked+(core?'<ul>'+core+'</ul>':'')+'</div>'
     +'<div class="grid" style="margin-top:12px"><div class="box"><h3>字幕タイムライン</h3>'+rows+'</div>'
     +'<div><div class="box"><h3 class="tts-unit" data-tts-text="'+ttsAttr('試験で問われるポイント')+'">試験で問われるポイント</h3><ul>'+exam+'</ul></div>'
