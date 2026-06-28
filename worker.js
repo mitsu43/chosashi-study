@@ -1075,7 +1075,15 @@ function openMemo(qid){
 function plainAidText(v){return String(v||'').replaceAll('**','')}
 function aidText(v){return esc(v).split('**').map((p,i)=>i%2?'<strong>'+p+'</strong>':p).join('')}
 function escText(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function ttsAttr(v){return esc(plainAidText(v))}
+function ttsReadable(v){
+  return plainAidText(v)
+    .replaceAll('：','。')
+    .replaceAll('・','、')
+    .replace(/([。、！？])/g,'$1 ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+function ttsAttr(v){return esc(ttsReadable(v))}
 let googleTtsAudio=null,googleTtsUrl='',ttsTraceTimer=null,ttsStopFlag=false,currentTtsUnits=[],currentTtsIndex=0;
 function setTtsVisible(on){
   const box=$('#tts-controls');if(box)box.style.display=on?'flex':'none';
@@ -1097,9 +1105,9 @@ function stopSpeech(){
 }
 function splitTtsText(text){
   const out=[];let buf='';
-  const breaks=new RegExp('(?<=[。！？'+String.fromCharCode(10)+'])');
+  const breaks=new RegExp('(?<=[：。！？、・'+String.fromCharCode(10)+'])');
   String(text||'').split(breaks).forEach(p=>{
-    if((buf+p).length>420&&buf){out.push(buf);buf=p}else buf+=p;
+    if((buf+p).length>260&&buf){out.push(buf);buf=p}else buf+=p;
   });
   if(buf.trim())out.push(buf);
   return out.length?out:[String(text||'')];
@@ -1193,16 +1201,16 @@ function openStudyAid(qid){
   const aidBox=$('#aid-content');
   aidBox.style.display='block';
   setTtsVisible(true);
-  const rows=aid.cues.map(c=>'<div class="cue tts-unit" data-tts-text="'+ttsAttr(c[0]+'。'+c[1])+'"><time>'+esc(c[0])+'</time><div>'+aidText(c[1])+'</div></div>').join('');
+  const rows=aid.cues.map(c=>'<div class="cue"><time>'+esc(c[0])+'</time><div>'+aidText(c[1])+'</div></div>').join('');
   const core=(aid.core||[]).map(x=>'<li class="tts-unit" data-tts-text="'+ttsAttr(x)+'">'+aidText(x)+'</li>').join('');
   const exam=aid.exam.map(x=>'<li class="tts-unit" data-tts-text="'+ttsAttr(x)+'">'+aidText(x)+'</li>').join('');
-  const practical=aid.practical.map(x=>'<li class="tts-unit" data-tts-text="'+ttsAttr(x)+'">'+aidText(x)+'</li>').join('');
+  const practical=aid.practical.map(x=>'<li>'+aidText(x)+'</li>').join('');
   const asked='<div class="tts-unit" data-tts-text="'+ttsAttr((aid.pattern||'パターン分類')+'。'+(aid.asked||''))+'">'+aidText(aid.asked||'')+'</div>';
   const doc='<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>body{font-family:system-ui,\"Noto Sans JP\",sans-serif;margin:0;padding:18px;background:#fdfbf5;color:#3a3a38;line-height:1.7}.note{color:#8a8580;font-size:13px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.box{background:#fff;border:1px solid #ece5da;border-radius:12px;padding:14px}h2{margin:0 0 4px;color:#5d8a3f}h3{margin:0 0 8px;color:#5d8a3f}.cue{display:grid;grid-template-columns:74px 1fr;gap:8px;border-top:1px solid #ece5da;padding:8px 0;font-size:14px}.cue:first-child{border-top:0}time{font-family:Consolas,monospace;color:#c9a24b;font-size:12px}li{margin:6px 0}.tts-unit{transition:background .15s}.tts-unit.tts-reading{background:#f3f5ea;border-radius:8px}.tts-hl{background:#e6eadc;color:#263326;border-radius:3px;font-weight:700}.tts-word{background:#c8d8a8;color:#1f351e;border-radius:3px;padding:0 2px;font-weight:900;box-shadow:0 0 0 1px #acc080}@media(max-width:720px){.grid{grid-template-columns:1fr}}</style></head><body>'
     +'<h2>'+esc(aid.module)+'</h2><div class="note">'+esc(aid.status)+'</div>'
     +'<div class="box" style="margin-top:12px"><h3>'+esc(aid.pattern||'パターン分類')+'</h3>'+asked+(core?'<ul>'+core+'</ul>':'')+'</div>'
     +'<div class="grid" style="margin-top:12px"><div class="box"><h3>字幕タイムライン</h3>'+rows+'</div>'
-    +'<div><div class="box"><h3>試験で問われるポイント</h3><ul>'+exam+'</ul></div>'
+    +'<div><div class="box"><h3 class="tts-unit" data-tts-text="'+ttsAttr('試験で問われるポイント')+'">試験で問われるポイント</h3><ul>'+exam+'</ul></div>'
     +'<div class="box" style="margin-top:12px"><h3>実務への接続</h3><ul>'+practical+'</ul></div></div></div>'
     +'<div class="box" style="margin-top:12px"><h3>次の改善</h3><div>'+esc(aid.next)+'</div></div>'
     +'</body></html>';
