@@ -619,6 +619,9 @@ const STUDY_HTML = `<!doctype html>
     #aid-content .tts-unit.tts-reading{background:transparent}
     #aid-content .tts-hl{background:transparent;color:inherit;border-radius:0;font-weight:800}
     #aid-content .tts-word{background:transparent;color:inherit;border-radius:0;padding:0;font-weight:900;box-shadow:none}
+    #tts-controls button:disabled{opacity:1;cursor:not-allowed}
+    #tts-controls .tts-active{background:#1f6130;color:#fff;border-color:#1f6130}
+    #tts-controls .tts-paused{background:#f3efe2;color:#7a5b11;border-color:#d8c681}
     @media(max-width:720px){#aid-content .grid{grid-template-columns:1fr}}
     .aid-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;overflow:auto}
     .aid-box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px}
@@ -866,9 +869,11 @@ const STUDY_AIDS={
       'この問題は、結論暗記ではなく、各肢を**保存・管理・変更/処分・自己持分処分**に仕分ける問題。',
     ],
     practical:[
-      '共有不動産の売却・賃貸・トラブル対応で、各共有者にどこまで権限があるか説明できる。',
-      '明渡し、賃貸借解除、持分処分で、単独・過半数・全員同意のどれが必要かを整理して顧客に伝える。',
-      '共有者間の合意形成が必要な場面を早めに見抜き、登記や測量の前提条件として確認する。',
+      'たとえば共有建物に無断で住んでいる第三者がいるなら、これは共有物を守る場面なので、共有者の1人から明渡しを求める説明につながる。',
+      '一方で、共有者Aが建物を使っている、またはAが誰かに貸しているだけなら、他の共有者が「自分は了解していない」と言うだけで、当然に追い出せるとは限らない。',
+      '賃貸借を解除したい場面では、誰が何割の持分を持っているかを確認する。3分の1ずつなら2人の同意で3分の2となり、過半数を満たす。',
+      '共有者が自分の持分だけを担保に入れる場面では、共有物全体を処分しているのではなく自己持分の処分なので、他の共有者の同意はいらない。',
+      '実務では、相談を受けた時点で「これは保存か、管理か、変更・処分か、自己持分だけの話か」とメモしておくと、顧客説明と必要な同意集めが速くなる。',
     ],
     next:'次はこの形式でH1702以降も追加し、法規OSモジュール別に検索・復習できる形へ広げます。'
   }
@@ -1097,6 +1102,18 @@ let googleTtsAudio=null,googleTtsUrl='',ttsTraceTimer=null,ttsStopFlag=false,cur
 function setTtsVisible(on){
   const box=$('#tts-controls');if(box)box.style.display=on?'flex':'none';
 }
+function setTtsActive(on,paused){
+  const start=$('[data-tts-start]'),pause=$('[data-tts-pause]');
+  if(start){
+    start.classList.toggle('tts-active',!!on);
+    start.textContent=on?'読み上げ中':'Google読み上げ';
+    start.disabled=!!on;
+  }
+  if(pause){
+    pause.classList.toggle('tts-paused',!!paused);
+    pause.textContent=paused?'再開':'一時停止';
+  }
+}
 function aidDoc(){return $('#aid-content')}
 function clearTtsTimer(){if(ttsTraceTimer){clearInterval(ttsTraceTimer);ttsTraceTimer=null}}
 function releaseTtsUrl(){if(googleTtsUrl){URL.revokeObjectURL(googleTtsUrl);googleTtsUrl=''}}
@@ -1111,6 +1128,7 @@ function stopSpeech(){
   ttsStopFlag=true;
   if(googleTtsAudio){try{googleTtsAudio.pause();googleTtsAudio.src=''}catch(e){}googleTtsAudio=null}
   releaseTtsUrl();resetTtsTrace();
+  setTtsActive(false,false);
 }
 function splitTtsText(text){
   const out=[];let buf='';
@@ -1135,7 +1153,8 @@ function markUnit(el,text,ratio){
 function finishUnit(el,text){
   if(!el)return;
   clearTtsTimer();
-  el.innerHTML='<span class="tts-hl">'+escText(text)+'</span>';
+  if(el.dataset&&el.dataset.originalHtml){el.innerHTML=el.dataset.originalHtml}
+  else el.innerHTML=escText(text);
   el.classList.remove('tts-reading');
 }
 async function fetchTtsUrl(text){
@@ -1147,7 +1166,7 @@ async function fetchTtsUrl(text){
 async function playGoogleUnit(index,parts,partIndex){
   if(ttsStopFlag)return;
   const el=currentTtsUnits[index];
-  if(!el){currentTtsIndex=index;return}
+  if(!el){currentTtsIndex=index;setTtsActive(false,false);return}
   currentTtsIndex=index;
   currentTtsUnits.forEach(x=>x.classList.remove('tts-reading'));
   const full=el.dataset.ttsText||el.innerText||'';
@@ -1181,6 +1200,7 @@ async function playGoogleUnit(index,parts,partIndex){
     await googleTtsAudio.play();
   }catch(e){
     clearTtsTimer();el.classList.remove('tts-reading');
+    setTtsActive(false,false);
     const raw=e&&e.message!==undefined?e.message:e;
     const msg=typeof raw==='string'?raw:JSON.stringify(raw);
     alert('Google読み上げでエラーが出ました: '+msg);
@@ -1193,12 +1213,13 @@ function startSpeech(){
   stopSpeech();
   ttsStopFlag=false;
   currentTtsIndex=0;
+  setTtsActive(true,false);
   playGoogleUnit(0);
 }
 function toggleSpeechPause(){
   if(!googleTtsAudio)return;
-  if(googleTtsAudio.paused)googleTtsAudio.play();
-  else googleTtsAudio.pause();
+  if(googleTtsAudio.paused){googleTtsAudio.play();setTtsActive(true,false)}
+  else{googleTtsAudio.pause();setTtsActive(true,true)}
 }
 function openStudyAid(qid){
   const aid=STUDY_AIDS[qid];if(!aid)return;
@@ -1215,7 +1236,7 @@ function openStudyAid(qid){
   const imageText=(aid.image||[]).join('');
   const core=(aid.core||[]).map(x=>'<li class="tts-unit" data-tts-text="'+ttsAttr(x)+'">'+aidPlain(x)+'</li>').join('');
   const exam=aid.exam.map(x=>'<li class="tts-unit" data-tts-text="'+ttsAttr(x)+'">'+aidPlain(x)+'</li>').join('');
-  const practical=aid.practical.map(x=>'<li>'+aidText(x)+'</li>').join('');
+  const practical=aid.practical.map(x=>'<li class="tts-unit" data-tts-text="'+ttsAttr(x)+'">'+aidPlain(x)+'</li>').join('');
   const imageBox=image?'<div class="box" style="margin-top:12px"><h3>実際のイメージ</h3><div class="tts-unit" data-tts-text="'+ttsAttr('実際のイメージ。'+imageText)+'"><ul>'+image+'</ul></div></div>':'';
   const asked='<div class="tts-unit" data-tts-text="'+ttsAttr((aid.pattern||'パターン分類')+'。'+(aid.asked||''))+'">'+aidPlain(aid.asked||'')+'</div>';
   const doc='<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>body{font-family:system-ui,\"Noto Sans JP\",sans-serif;margin:0;padding:18px;background:#fdfbf5;color:#3a3a38;line-height:1.7}.note{color:#8a8580;font-size:13px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.box{background:#fff;border:1px solid #ece5da;border-radius:12px;padding:14px}h2{margin:0 0 4px;color:#5d8a3f}h3{margin:0 0 8px;color:#5d8a3f}.cue{display:grid;grid-template-columns:74px 1fr;gap:8px;border-top:1px solid #ece5da;padding:8px 0;font-size:14px}.cue:first-child{border-top:0}time{font-family:Consolas,monospace;color:#c9a24b;font-size:12px}li{margin:6px 0}.tts-unit{transition:background .15s}.tts-unit.tts-reading{background:transparent}.tts-hl{background:transparent;color:inherit;border-radius:0;font-weight:800}.tts-word{background:transparent;color:inherit;border-radius:0;padding:0;font-weight:900;box-shadow:none}@media(max-width:720px){.grid{grid-template-columns:1fr}}</style></head><body>'
@@ -1224,7 +1245,7 @@ function openStudyAid(qid){
     +'<div class="box" style="margin-top:12px"><h3>'+esc(aid.pattern||'パターン分類')+'</h3>'+asked+(core?'<ul>'+core+'</ul>':'')+'</div>'
     +'<div class="grid" style="margin-top:12px"><div class="box"><h3>字幕タイムライン</h3>'+rows+'</div>'
     +'<div><div class="box"><h3 class="tts-unit" data-tts-text="'+ttsAttr('試験で問われるポイント')+'">試験で問われるポイント</h3><ul>'+exam+'</ul></div>'
-    +'<div class="box" style="margin-top:12px"><h3>実務への接続</h3><ul>'+practical+'</ul></div></div></div>'
+    +'<div class="box" style="margin-top:12px"><h3 class="tts-unit" data-tts-text="'+ttsAttr('実務への接続')+'">実務への接続</h3><ul>'+practical+'</ul></div></div></div>'
     +'<div class="box" style="margin-top:12px"><h3>次の改善</h3><div>'+esc(aid.next)+'</div></div>'
     +'</body></html>';
   const start=doc.indexOf('<body>')+6,end=doc.lastIndexOf('</body>');
