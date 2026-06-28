@@ -1048,7 +1048,7 @@ function buildAidSpeech(aid){
     '実務への接続',
     ...aid.practical.map(plainAidText),
   ];
-  return lines.filter(Boolean).join('。\n');
+  return lines.filter(Boolean).join('。'+String.fromCharCode(10));
 }
 function setTtsVisible(on){
   const box=$('#tts-controls');if(box)box.style.display=on?'flex':'none';
