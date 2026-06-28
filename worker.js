@@ -65,6 +65,7 @@ export default {
       if (m === 'POST' && path === '/api/answers')        return json(await postAnswer(request, env), 201);
       if (m === 'GET'  && path === '/api/daily-tasks')    return json(await getDailyTasks(env, url.searchParams.get('date') || todayJst()));
       if (m === 'POST' && path === '/api/daily-tasks')    return json(await postDailyTask(request, env), 201);
+      if (m === 'POST' && path === '/api/tts')            return json(await googleTts(request, env), 200);
 
       // --- 問題管理 API ---
       if (m === 'GET'  && path === '/api/questions')            return json(await getQuestions(env, url));
@@ -274,6 +275,32 @@ async function postDailyTask(request, env) {
     ON CONFLICT(task_date, task_id) DO UPDATE SET done=excluded.done, updated_at=CURRENT_TIMESTAMP
   `).bind(taskDate, taskId, done).run();
   return { ok: true };
+}
+
+async function googleTts(request, env) {
+  const key = env.GOOGLE_TTS_KEY;
+  if (!key) throw new Error('GOOGLE_TTS_KEY is not set');
+  const b = await readJson(request);
+  const text = String(b.text || '').trim();
+  if (!text) throw new Error('text required');
+  if (text.length > 900) throw new Error('text too long');
+  const voice = String(b.voice || 'ja-JP-Wavenet-D');
+  const speakingRate = Math.max(0.25, Math.min(4.0, Number(b.rate || 1.2)));
+  const pitch = Number.isFinite(Number(b.pitch)) ? Number(b.pitch) : -6.0;
+  const res = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${key}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      input: { text },
+      voice: { languageCode: 'ja-JP', name: voice },
+      audioConfig: { audioEncoding: 'MP3', speakingRate, pitch },
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.audioContent) {
+    throw new Error(data?.error?.message || 'Google TTS error');
+  }
+  return { audioContent: data.audioContent };
 }
 
 // ============================================================
@@ -578,6 +605,21 @@ const STUDY_HTML = `<!doctype html>
     .memo-field textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;
       font:inherit;font-size:13px;min-height:56px;background:#fff;resize:vertical}
     iframe{width:100%;flex:1;border:0;border-radius:9px;background:#fff;min-height:70vh}
+    #aid-content{display:none;width:100%;flex:1;overflow:auto;border-radius:9px;background:#fdfbf5;padding:18px;color:#3a3a38;line-height:1.7}
+    #aid-content .note{color:#8a8580;font-size:13px}
+    #aid-content .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    #aid-content .box{background:#fff;border:1px solid #ece5da;border-radius:12px;padding:14px}
+    #aid-content h2{margin:0 0 4px;color:#5d8a3f}
+    #aid-content h3{margin:0 0 8px;color:#5d8a3f}
+    #aid-content .cue{display:grid;grid-template-columns:74px 1fr;gap:8px;border-top:1px solid #ece5da;padding:8px 0;font-size:14px}
+    #aid-content .cue:first-child{border-top:0}
+    #aid-content time{font-family:Consolas,monospace;color:#c9a24b;font-size:12px}
+    #aid-content li{margin:6px 0}
+    #aid-content .tts-unit{transition:background .15s}
+    #aid-content .tts-unit.tts-reading{background:#f3f5ea;border-radius:8px}
+    #aid-content .tts-hl{background:#e6eadc;color:#263326;border-radius:3px;font-weight:700}
+    #aid-content .tts-word{background:#c8d8a8;color:#1f351e;border-radius:3px;padding:0 2px;font-weight:900;box-shadow:0 0 0 1px #acc080}
+    @media(max-width:720px){#aid-content .grid{grid-template-columns:1fr}}
     .aid-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;overflow:auto}
     .aid-box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px}
     .aid-box h3{margin:0 0 8px;color:var(--wakaba-deep)}
@@ -763,7 +805,7 @@ const STUDY_HTML = `<!doctype html>
       <h2 id="video-title">解説動画</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <div id="tts-controls" style="display:none;gap:8px;flex-wrap:wrap">
-          <button class="btn sec" data-tts-start>読み上げ</button>
+          <button class="btn sec" data-tts-start>Google読み上げ</button>
           <button class="btn sec" data-tts-pause>一時停止/再開</button>
           <button class="btn sec" data-tts-stop>停止</button>
         </div>
@@ -771,6 +813,7 @@ const STUDY_HTML = `<!doctype html>
       </div>
     </div>
     <iframe id="video-frame" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+    <div id="aid-content"></div>
   </div>
 </div>
 
@@ -1029,63 +1072,142 @@ function openMemo(qid){
   $('#memo-modal').classList.add('active');
 }
 
-let currentSpeechText='';
 function plainAidText(v){return String(v||'').replaceAll('**','')}
 function aidText(v){return esc(v).split('**').map((p,i)=>i%2?'<strong>'+p+'</strong>':p).join('')}
-function buildAidSpeech(aid){
-  const lines=[
-    aid.title,
-    aid.module,
-    aid.topic?'論点：'+aid.topic:'',
-    aid.pattern||'',
-    plainAidText(aid.asked||''),
-    '重要ポイント',
-    ...(aid.core||[]).map(plainAidText),
-    '試験で問われるポイント',
-    ...aid.exam.map(plainAidText),
-    '字幕タイムライン',
-    ...aid.cues.map(c=>c[0]+'。'+plainAidText(c[1])),
-    '実務への接続',
-    ...aid.practical.map(plainAidText),
-  ];
-  return lines.filter(Boolean).join('。'+String.fromCharCode(10));
-}
+function escText(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function ttsAttr(v){return esc(plainAidText(v))}
+let googleTtsAudio=null,googleTtsUrl='',ttsTraceTimer=null,ttsStopFlag=false,currentTtsUnits=[],currentTtsIndex=0;
 function setTtsVisible(on){
   const box=$('#tts-controls');if(box)box.style.display=on?'flex':'none';
 }
-function stopSpeech(){try{speechSynthesis.cancel()}catch(e){}}
+function aidDoc(){return $('#aid-content')}
+function clearTtsTimer(){if(ttsTraceTimer){clearInterval(ttsTraceTimer);ttsTraceTimer=null}}
+function releaseTtsUrl(){if(googleTtsUrl){URL.revokeObjectURL(googleTtsUrl);googleTtsUrl=''}}
+function resetTtsTrace(){
+  clearTtsTimer();
+  currentTtsUnits.forEach(el=>{
+    if(el&&el.dataset&&el.dataset.originalHtml){el.innerHTML=el.dataset.originalHtml;delete el.dataset.originalHtml}
+    if(el&&el.classList)el.classList.remove('tts-reading');
+  });
+}
+function stopSpeech(){
+  ttsStopFlag=true;
+  if(googleTtsAudio){try{googleTtsAudio.pause();googleTtsAudio.src=''}catch(e){}googleTtsAudio=null}
+  releaseTtsUrl();resetTtsTrace();
+}
+function splitTtsText(text){
+  const out=[];let buf='';
+  const breaks=new RegExp('(?<=[。！？'+String.fromCharCode(10)+'])');
+  String(text||'').split(breaks).forEach(p=>{
+    if((buf+p).length>420&&buf){out.push(buf);buf=p}else buf+=p;
+  });
+  if(buf.trim())out.push(buf);
+  return out.length?out:[String(text||'')];
+}
+function markUnit(el,text,ratio){
+  if(!el)return;
+  const s=String(text||'');
+  if(!el.dataset.originalHtml)el.dataset.originalHtml=el.innerHTML;
+  const idx=Math.max(0,Math.min(s.length,Math.floor(s.length*ratio)));
+  const cur=s.slice(idx,idx+1);
+  el.innerHTML='<span class="tts-hl">'+escText(s.slice(0,idx))+'</span>'
+    +(cur?'<span class="tts-word">'+escText(cur)+'</span>':'')
+    +escText(s.slice(idx+1));
+  const cursor=el.querySelector('.tts-word');if(cursor)cursor.scrollIntoView({behavior:'smooth',block:'center'});
+}
+function finishUnit(el,text){
+  if(!el)return;
+  clearTtsTimer();
+  el.innerHTML='<span class="tts-hl">'+escText(text)+'</span>';
+  el.classList.remove('tts-reading');
+}
+async function fetchTtsUrl(text){
+  const data=await api('/api/tts',{method:'POST',body:JSON.stringify({text,voice:'ja-JP-Wavenet-D',rate:1.15,pitch:-6})});
+  const bin=atob(data.audioContent);const bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  return URL.createObjectURL(new Blob([bytes],{type:'audio/mpeg'}));
+}
+async function playGoogleUnit(index,parts,partIndex){
+  if(ttsStopFlag)return;
+  const el=currentTtsUnits[index];
+  if(!el){currentTtsIndex=index;return}
+  currentTtsIndex=index;
+  currentTtsUnits.forEach(x=>x.classList.remove('tts-reading'));
+  const full=el.dataset.ttsText||el.innerText||'';
+  const seq=parts||splitTtsText(full);
+  const text=seq[partIndex||0]||'';
+  if(!text.trim())return playGoogleUnit(index+1);
+  el.classList.add('tts-reading');
+  try{
+    releaseTtsUrl();
+    googleTtsUrl=await fetchTtsUrl(text);
+    if(ttsStopFlag)return;
+    googleTtsAudio=new Audio(googleTtsUrl);
+    googleTtsAudio.onloadedmetadata=()=>{
+      const duration=Math.max(1,googleTtsAudio.duration||Math.max(2,text.length/8));
+      const started=performance.now();
+      clearTtsTimer();
+      ttsTraceTimer=setInterval(()=>{
+        if(!googleTtsAudio||googleTtsAudio.paused)return;
+        const ratio=Math.min(0.98,(performance.now()-started)/(duration*1000));
+        markUnit(el,text,ratio);
+      },90);
+    };
+    googleTtsAudio.onended=()=>{
+      finishUnit(el,text);
+      const nextPart=(partIndex||0)+1;
+      if(seq[nextPart])playGoogleUnit(index,seq,nextPart);
+      else playGoogleUnit(index+1);
+    };
+    googleTtsAudio.onerror=()=>{finishUnit(el,text);playGoogleUnit(index+1)};
+    markUnit(el,text,0);
+    await googleTtsAudio.play();
+  }catch(e){
+    clearTtsTimer();el.classList.remove('tts-reading');
+    const raw=e&&e.message!==undefined?e.message:e;
+    const msg=typeof raw==='string'?raw:JSON.stringify(raw);
+    alert('Google読み上げでエラーが出ました: '+msg);
+  }
+}
 function startSpeech(){
-  if(!currentSpeechText)return alert('読み上げる要点がありません。');
-  if(!('speechSynthesis' in window))return alert('このブラウザは読み上げに対応していません。');
+  const doc=aidDoc();
+  currentTtsUnits=doc?Array.from(doc.querySelectorAll('.tts-unit')):[];
+  if(!currentTtsUnits.length)return alert('読み上げる要点がありません。');
   stopSpeech();
-  const u=new SpeechSynthesisUtterance(currentSpeechText);
-  u.lang='ja-JP';u.rate=0.95;u.pitch=1;
-  speechSynthesis.speak(u);
+  ttsStopFlag=false;
+  currentTtsIndex=0;
+  playGoogleUnit(0);
 }
 function toggleSpeechPause(){
-  if(!('speechSynthesis' in window))return;
-  if(speechSynthesis.paused)speechSynthesis.resume();
-  else if(speechSynthesis.speaking)speechSynthesis.pause();
+  if(!googleTtsAudio)return;
+  if(googleTtsAudio.paused)googleTtsAudio.play();
+  else googleTtsAudio.pause();
 }
 function openStudyAid(qid){
   const aid=STUDY_AIDS[qid];if(!aid)return;
   $('#video-title').textContent=aid.title;
-  $('#video-frame').src='about:blank';
-  currentSpeechText=buildAidSpeech(aid);
+  stopSpeech();
+  const frame=$('#video-frame');
+  frame.src='';
+  frame.style.display='none';
+  const aidBox=$('#aid-content');
+  aidBox.style.display='block';
   setTtsVisible(true);
-  const rows=aid.cues.map(c=>'<div class="cue"><time>'+esc(c[0])+'</time><div>'+aidText(c[1])+'</div></div>').join('');
-  const core=(aid.core||[]).map(x=>'<li>'+aidText(x)+'</li>').join('');
-  const exam=aid.exam.map(x=>'<li>'+aidText(x)+'</li>').join('');
-  const practical=aid.practical.map(x=>'<li>'+aidText(x)+'</li>').join('');
-  const doc='<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>body{font-family:system-ui,\"Noto Sans JP\",sans-serif;margin:0;padding:18px;background:#fdfbf5;color:#3a3a38;line-height:1.7}.note{color:#8a8580;font-size:13px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.box{background:#fff;border:1px solid #ece5da;border-radius:12px;padding:14px}h2{margin:0 0 4px;color:#5d8a3f}h3{margin:0 0 8px;color:#5d8a3f}.cue{display:grid;grid-template-columns:74px 1fr;gap:8px;border-top:1px solid #ece5da;padding:8px 0;font-size:14px}.cue:first-child{border-top:0}time{font-family:Consolas,monospace;color:#c9a24b;font-size:12px}li{margin:6px 0}@media(max-width:720px){.grid{grid-template-columns:1fr}}</style></head><body>'
+  const rows=aid.cues.map(c=>'<div class="cue tts-unit" data-tts-text="'+ttsAttr(c[0]+'。'+c[1])+'"><time>'+esc(c[0])+'</time><div>'+aidText(c[1])+'</div></div>').join('');
+  const core=(aid.core||[]).map(x=>'<li class="tts-unit" data-tts-text="'+ttsAttr(x)+'">'+aidText(x)+'</li>').join('');
+  const exam=aid.exam.map(x=>'<li class="tts-unit" data-tts-text="'+ttsAttr(x)+'">'+aidText(x)+'</li>').join('');
+  const practical=aid.practical.map(x=>'<li class="tts-unit" data-tts-text="'+ttsAttr(x)+'">'+aidText(x)+'</li>').join('');
+  const asked='<div class="tts-unit" data-tts-text="'+ttsAttr((aid.pattern||'パターン分類')+'。'+(aid.asked||''))+'">'+aidText(aid.asked||'')+'</div>';
+  const doc='<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>body{font-family:system-ui,\"Noto Sans JP\",sans-serif;margin:0;padding:18px;background:#fdfbf5;color:#3a3a38;line-height:1.7}.note{color:#8a8580;font-size:13px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.box{background:#fff;border:1px solid #ece5da;border-radius:12px;padding:14px}h2{margin:0 0 4px;color:#5d8a3f}h3{margin:0 0 8px;color:#5d8a3f}.cue{display:grid;grid-template-columns:74px 1fr;gap:8px;border-top:1px solid #ece5da;padding:8px 0;font-size:14px}.cue:first-child{border-top:0}time{font-family:Consolas,monospace;color:#c9a24b;font-size:12px}li{margin:6px 0}.tts-unit{transition:background .15s}.tts-unit.tts-reading{background:#f3f5ea;border-radius:8px}.tts-hl{background:#e6eadc;color:#263326;border-radius:3px;font-weight:700}.tts-word{background:#c8d8a8;color:#1f351e;border-radius:3px;padding:0 2px;font-weight:900;box-shadow:0 0 0 1px #acc080}@media(max-width:720px){.grid{grid-template-columns:1fr}}</style></head><body>'
     +'<h2>'+esc(aid.module)+'</h2><div class="note">'+esc(aid.status)+'</div>'
-    +'<div class="box" style="margin-top:12px"><h3>'+esc(aid.pattern||'パターン分類')+'</h3><div>'+aidText(aid.asked||'')+'</div>'+(core?'<ul>'+core+'</ul>':'')+'</div>'
+    +'<div class="box" style="margin-top:12px"><h3>'+esc(aid.pattern||'パターン分類')+'</h3>'+asked+(core?'<ul>'+core+'</ul>':'')+'</div>'
     +'<div class="grid" style="margin-top:12px"><div class="box"><h3>字幕タイムライン</h3>'+rows+'</div>'
     +'<div><div class="box"><h3>試験で問われるポイント</h3><ul>'+exam+'</ul></div>'
     +'<div class="box" style="margin-top:12px"><h3>実務への接続</h3><ul>'+practical+'</ul></div></div></div>'
     +'<div class="box" style="margin-top:12px"><h3>次の改善</h3><div>'+esc(aid.next)+'</div></div>'
     +'</body></html>';
-  $('#video-frame').srcdoc=doc;
+  const start=doc.indexOf('<body>')+6,end=doc.lastIndexOf('</body>');
+  aidBox.innerHTML=doc.slice(start,end);
   $('#video-modal').classList.add('active');
 }
 
@@ -1113,13 +1235,13 @@ document.addEventListener('click',async e=>{
     renderMemoHistory();return}
 
   const vid=e.target.closest('[data-video]');
-  if(vid&&!vid.disabled){const url=drivePreview(vid.dataset.video);if(url){currentSpeechText='';stopSpeech();setTtsVisible(false);$('#video-title').textContent=vid.dataset.title||'解説動画';$('#video-frame').src=url;$('#video-modal').classList.add('active')}return}
+  if(vid&&!vid.disabled){const url=drivePreview(vid.dataset.video);if(url){stopSpeech();setTtsVisible(false);$('#aid-content').style.display='none';$('#video-frame').style.display='block';$('#video-title').textContent=vid.dataset.title||'解説動画';$('#video-frame').src=url;$('#video-modal').classList.add('active')}return}
   const aid=e.target.closest('[data-aid]');
   if(aid&&!aid.disabled){openStudyAid(aid.dataset.aid);return}
   if(e.target.closest('[data-tts-start]')){startSpeech();return}
   if(e.target.closest('[data-tts-pause]')){toggleSpeechPause();return}
   if(e.target.closest('[data-tts-stop]')){stopSpeech();return}
-  if(e.target.closest('[data-close-video]')){stopSpeech();currentSpeechText='';setTtsVisible(false);$('#video-modal').classList.remove('active');$('#video-frame').src='';return}
+  if(e.target.closest('[data-close-video]')){stopSpeech();setTtsVisible(false);$('#video-modal').classList.remove('active');$('#video-frame').src='';$('#aid-content').innerHTML='';return}
 
   const ans=e.target.closest('[data-answer]');
   if(ans){ans.disabled=true;
