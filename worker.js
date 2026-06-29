@@ -71,6 +71,7 @@ export default {
       if (m === 'GET'  && path === '/api/questions')            return json(await getQuestions(env, url));
       if (m === 'POST' && path === '/api/questions/link')       return json(await postQuestionLink(request, env), 200);
       if (m === 'POST' && path === '/api/questions/meta')       return json(await postQuestionMeta(request, env), 200);
+      if (m === 'POST' && path === '/api/questions/texts/bulk') return json(await bulkPostQuestionTexts(request, env), 200);
 
       // --- PDF管理 API ---
       if (m === 'GET'  && path === '/api/pdf-files')            return json(await getPdfFiles(env));
@@ -370,6 +371,51 @@ async function postQuestionMeta(request, env) {
   await env.DB.prepare(`UPDATE questions SET subject=?, topic=? WHERE question_id=?`)
     .bind(subject || null, topic || null, questionId).run();
   return { ok: true };
+}
+
+async function bulkPostQuestionTexts(request, env) {
+  const b = await readJson(request);
+  const records = Array.isArray(b.records) ? b.records : parseQuestionTextCsv(String(b.csv || ''));
+  if (!records.length) throw new Error('records or csv required');
+  if (records.length > 500) throw new Error('Too many records. Please split into 500 rows or fewer.');
+
+  const cleaned = [];
+  for (const row of records) {
+    const questionId = String(row.question_id || row.id || '').trim();
+    const text = String(row.question_text ?? row.text ?? '').trim();
+    if (!questionId || !text) continue;
+    cleaned.push({ questionId, text });
+  }
+  if (!cleaned.length) throw new Error('No valid question_id/question_text rows');
+
+  const existing = await env.DB.prepare(
+    `SELECT question_id FROM questions WHERE question_id IN (${cleaned.map(() => '?').join(',')})`
+  ).bind(...cleaned.map(r => r.questionId)).all();
+  const known = new Set((existing.results || []).map(r => r.question_id));
+  const unknown = cleaned.filter(r => !known.has(r.questionId)).map(r => r.questionId);
+  if (unknown.length) throw new Error(`Unknown question_id: ${unknown.slice(0, 10).join(', ')}`);
+
+  await env.DB.batch(cleaned.map(r =>
+    env.DB.prepare('UPDATE questions SET question_text=? WHERE question_id=?').bind(r.text, r.questionId)
+  ));
+  return { ok: true, updated: cleaned.length };
+}
+
+function parseQuestionTextCsv(csv) {
+  return csv.split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const tab = line.indexOf('\t');
+      const comma = line.indexOf(',');
+      const cut = tab >= 0 ? tab : comma;
+      if (cut < 0) return null;
+      return {
+        question_id: line.slice(0, cut).trim().replace(/^"|"$/g, ''),
+        question_text: line.slice(cut + 1).trim().replace(/^"|"$/g, ''),
+      };
+    })
+    .filter(Boolean);
 }
 
 // ============================================================
@@ -1756,6 +1802,17 @@ const ADMIN_HTML = `<!doctype html>
       </div>
       <p class="status" id="edit-status"></p>
     </div>
+
+    <div class="card">
+      <h2>問題文読み上げテキストの一括登録</h2>
+      <p class="muted" style="margin-top:0;font-size:13px">OCRやGeminiで作った本文を、1行ずつ「問題ID,問題文」または「問題ID タブ 問題文」で貼り付けます。</p>
+      <textarea id="bulk-question-texts" rows="8" placeholder="H1701,ここにH17第1問の問題文&#10;H1702,ここにH17第2問の問題文"></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button id="btn-bulk-question-texts">問題文を一括登録</button>
+        <button class="secondary" id="btn-clear-question-texts">クリア</button>
+      </div>
+      <p class="status" id="bulk-question-texts-status"></p>
+    </div>
   </section>
 
   <!-- ===== PDF管理タブ ===== -->
@@ -1905,6 +1962,22 @@ $('#save-edit').addEventListener('click',async()=>{
     $('#edit-status').textContent='保存しました。';
     loadQuestions();
   }catch(e){$('#edit-status').innerHTML='<span class="error">'+esc(e.message)+'</span>'}
+  finally{btn.disabled=false}
+});
+
+$('#btn-clear-question-texts').addEventListener('click',()=>{
+  $('#bulk-question-texts').value='';
+  $('#bulk-question-texts-status').textContent='';
+});
+
+$('#btn-bulk-question-texts').addEventListener('click',async()=>{
+  const btn=$('#btn-bulk-question-texts');
+  btn.disabled=true;$('#bulk-question-texts-status').textContent='登録中...';
+  try{
+    const d=await api('/api/questions/texts/bulk',{method:'POST',body:JSON.stringify({csv:$('#bulk-question-texts').value})});
+    $('#bulk-question-texts-status').textContent=d.updated+'件の問題文を登録しました。';
+    loadQuestions();
+  }catch(e){$('#bulk-question-texts-status').innerHTML='<span class="error">'+esc(e.message)+'</span>'}
   finally{btn.disabled=false}
 });
 
