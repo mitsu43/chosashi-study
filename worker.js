@@ -134,7 +134,7 @@ async function getToday(env) {
       FROM answers
     )
     SELECT q.question_id, q.type, q.year_label, q.number,
-           q.subject, q.topic, q.video_url, q.pdf_url, q.pdf_page,
+           q.subject, q.topic, q.video_url, q.pdf_url, q.pdf_page, q.question_text,
            l.answered_at AS last_answered_at
     FROM latest l
     JOIN questions q ON q.question_id = l.question_id
@@ -150,7 +150,7 @@ async function getToday(env) {
     const exc = excl.length ? `WHERE q.question_id NOT IN (${ph})` : '';
     const { results } = await env.DB.prepare(`
       SELECT q.question_id, q.type, q.year_label, q.number,
-             q.subject, q.topic, q.video_url, q.pdf_url, q.pdf_page,
+             q.subject, q.topic, q.video_url, q.pdf_url, q.pdf_page, q.question_text,
              COUNT(a.id) AS attempts, MAX(a.answered_at) AS last_answered_at
       FROM questions q
       LEFT JOIN answers a ON a.question_id = q.question_id
@@ -180,7 +180,7 @@ async function getWrongQuestions(env) {
       FROM answers GROUP BY question_id
     )
     SELECT q.question_id, q.type, q.year_label, q.number,
-           q.subject, q.topic, q.video_url, q.pdf_url, q.pdf_page,
+           q.subject, q.topic, q.video_url, q.pdf_url, q.pdf_page, q.question_text,
            c.wrong_count, c.correct_count, c.last_wrong_at
     FROM latest l
     JOIN questions q ON q.question_id = l.question_id
@@ -321,7 +321,7 @@ async function getQuestions(env, url) {
   const where = wheres.length ? 'WHERE ' + wheres.join(' AND ') : '';
 
   const { results } = await env.DB.prepare(`
-    SELECT question_id, type, year_label, number, subject, topic, video_url, pdf_url, pdf_page
+    SELECT question_id, type, year_label, number, subject, topic, video_url, pdf_url, pdf_page, question_text
     FROM questions ${where}
     ORDER BY ${qOrder}
     LIMIT ? OFFSET ?
@@ -339,7 +339,7 @@ async function postQuestionLink(request, env) {
   const field      = String(b.field || '').trim();
   const value      = String(b.url ?? b.value ?? '').trim();
 
-  const allowed = ['pdf_url','video_url','pdf_page'];
+  const allowed = ['pdf_url','video_url','pdf_page','question_text'];
   if (!questionId || !allowed.includes(field)) throw new Error('question_id and valid field required');
   const exists = await env.DB.prepare('SELECT 1 FROM questions WHERE question_id=?').bind(questionId).first();
   if (!exists) throw new Error(`Unknown question_id: ${questionId}`);
@@ -348,6 +348,8 @@ async function postQuestionLink(request, env) {
     const page = parseInt(value, 10);
     if (isNaN(page) || page < 1) throw new Error('pdf_page must be a positive integer');
     await env.DB.prepare(`UPDATE questions SET pdf_page=? WHERE question_id=?`).bind(page, questionId).run();
+  } else if (field === 'question_text') {
+    await env.DB.prepare(`UPDATE questions SET question_text=? WHERE question_id=?`).bind(value || null, questionId).run();
   } else {
     await env.DB.prepare(`UPDATE questions SET ${field}=? WHERE question_id=?`).bind(value, questionId).run();
   }
@@ -1359,12 +1361,14 @@ function qCard(q){
   const pdfPage=q.pdf_page?('#page='+q.pdf_page):'';
   const sub=q.subject?'<span class="tag">'+esc(q.subject)+'</span>':'';
   const top=q.topic?'<span class="tag">'+esc(q.topic)+'</span>':'';
+  const qText=String(q.question_text||'').trim();
   return '<div class="q-card"><div style="display:flex;justify-content:space-between;align-items:flex-start">'
     +'<div><h3>'+title+'</h3><div class="muted small">'+esc(q.question_id)+'</div>'+sub+top+'</div>'
     +(q.wrong_count?'<div class="muted small">誤答'+q.wrong_count+'回</div>':'')+'</div>'
     +'<div class="q-actions">'
     +(q.video_url?'<button class="btn sec" data-video="'+esc(q.video_url)+'" data-title="'+title+'">解説動画</button>':'<button class="btn sec" disabled>動画なし</button>')
     +(STUDY_AIDS[q.question_id]?'<button class="btn sec" data-aid="'+esc(q.question_id)+'">字幕・要点</button>':'')
+    +(qText?'<button class="btn sec" data-question-read="'+esc(q.question_id)+'" data-title="'+title+'" data-question-text="'+esc(qText)+'">問題文読み上げ</button>':'')
     +(pdfUrl?'<a class="btn sec" href="'+esc(pdfUrl)+(pdfUrl.includes('/preview')?pdfPage:'')+'" target="_blank" rel="noopener">問題PDF</a>':'<button class="btn sec" disabled>PDFなし</button>')
     +'</div><div class="q-actions">'
     +'<button class="btn" data-answer="'+esc(q.question_id)+'" data-result="correct">正解</button>'
@@ -1590,6 +1594,21 @@ function openStudyAid(qid){
   aidBox.innerHTML=doc.slice(start,end);
   $('#video-modal').classList.add('active');
 }
+function openQuestionText(qid,title,text){
+  stopSpeech();
+  $('#video-title').textContent=title+' 問題文';
+  $('#video-frame').src='';
+  $('#video-frame').style.display='none';
+  const aidBox=$('#aid-content');
+  aidBox.style.display='block';
+  setTtsVisible(true);
+  const clean=String(text||'').trim();
+  aidBox.innerHTML='<h2>'+esc(title)+' 問題文</h2>'
+    +'<div class="note">PDFから抽出・登録した問題文テキストです。</div>'
+    +'<div class="box" style="margin-top:12px"><h3>問題文</h3>'
+    +'<div class="tts-unit" data-tts-text="'+ttsAttr(clean)+'" style="white-space:pre-wrap">'+esc(clean)+'</div></div>';
+  $('#video-modal').classList.add('active');
+}
 
 document.addEventListener('click',async e=>{
   const tab=e.target.closest('[data-tab]');
@@ -1618,6 +1637,8 @@ document.addEventListener('click',async e=>{
   if(vid&&!vid.disabled){const url=drivePreview(vid.dataset.video);if(url){stopSpeech();setTtsVisible(false);$('#aid-content').style.display='none';$('#video-frame').style.display='block';$('#video-title').textContent=vid.dataset.title||'解説動画';$('#video-frame').src=url;$('#video-modal').classList.add('active')}return}
   const aid=e.target.closest('[data-aid]');
   if(aid&&!aid.disabled){openStudyAid(aid.dataset.aid);return}
+  const qRead=e.target.closest('[data-question-read]');
+  if(qRead&&!qRead.disabled){openQuestionText(qRead.dataset.questionRead,qRead.dataset.title||'問題',qRead.dataset.questionText||'');return}
   if(e.target.closest('[data-tts-start]')){startSpeech();return}
   if(e.target.closest('[data-tts-pause]')){toggleSpeechPause();return}
   if(e.target.closest('[data-tts-stop]')){stopSpeech();return}
@@ -1728,6 +1749,7 @@ const ADMIN_HTML = `<!doctype html>
         <div><label>PDFページ番号</label><input type="number" id="edit-pdf-page" min="1"></div>
       </div>
       <div style="margin-top:10px"><label>動画リンク（Google Drive URL or ID）</label><input type="url" id="edit-video"></div>
+      <div style="margin-top:10px"><label>問題文テキスト（PDFから抽出した本文）</label><textarea id="edit-question-text" rows="8" placeholder="ここに問題文を貼ると、トップ画面に「問題文読み上げ」ボタンが出ます。"></textarea></div>
       <div style="display:flex;gap:8px;margin-top:12px">
         <button id="save-edit">保存</button>
         <button class="secondary" id="cancel-edit">キャンセル</button>
@@ -1831,12 +1853,13 @@ async function loadQuestions(){
     $('#prev-page').disabled=qPage===0;
     $('#next-page').disabled=(qPage+1)*PAGE>=d.total;
     if(!d.questions.length){$('#q-table-wrap').innerHTML='<p class="muted">該当なし</p>';return}
-    $('#q-table-wrap').innerHTML='<table><thead><tr><th>ID</th><th>科目</th><th>論点</th><th>PDF</th><th>動画</th><th></th></tr></thead><tbody>'
+    $('#q-table-wrap').innerHTML='<table><thead><tr><th>ID</th><th>科目</th><th>論点</th><th>PDF</th><th>問題文</th><th>動画</th><th></th></tr></thead><tbody>'
       +d.questions.map(q=>'<tr>'
         +'<td>'+esc(q.question_id)+'</td>'
         +'<td>'+(q.subject?'<span class="tag">'+esc(q.subject)+'</span>':'<span class="muted">未設定</span>')+'</td>'
         +'<td class="muted" style="font-size:12px">'+esc(q.topic||'')+'</td>'
         +'<td>'+(q.pdf_url?'✓':'')+(q.pdf_page?' p.'+q.pdf_page:'')+'</td>'
+        +'<td>'+(q.question_text?'✓':'')+'</td>'
         +'<td>'+(q.video_url?'✓':'')+'</td>'
         +'<td><button class="secondary btn-sm" data-edit="'+esc(JSON.stringify(q))+'">編集</button></td>'
         +'</tr>').join('')
@@ -1860,6 +1883,7 @@ $('#q-table-wrap').addEventListener('click',e=>{
   $('#edit-pdf').value=currentQ.pdf_url||'';
   $('#edit-pdf-page').value=currentQ.pdf_page||'';
   $('#edit-video').value=currentQ.video_url||'';
+  $('#edit-question-text').value=currentQ.question_text||'';
   $('#edit-status').textContent='';
   $('#edit-form').style.display='block';
   $('#edit-form').scrollIntoView({behavior:'smooth'});
@@ -1876,6 +1900,7 @@ $('#save-edit').addEventListener('click',async()=>{
     if($('#edit-pdf').value)calls.push(api('/api/questions/link',{method:'POST',body:JSON.stringify({question_id:currentQ.question_id,field:'pdf_url',url:$('#edit-pdf').value})}));
     if($('#edit-pdf-page').value)calls.push(api('/api/questions/link',{method:'POST',body:JSON.stringify({question_id:currentQ.question_id,field:'pdf_page',url:$('#edit-pdf-page').value})}));
     if($('#edit-video').value)calls.push(api('/api/questions/link',{method:'POST',body:JSON.stringify({question_id:currentQ.question_id,field:'video_url',url:$('#edit-video').value})}));
+    calls.push(api('/api/questions/link',{method:'POST',body:JSON.stringify({question_id:currentQ.question_id,field:'question_text',value:$('#edit-question-text').value})}));
     await Promise.all(calls);
     $('#edit-status').textContent='保存しました。';
     loadQuestions();

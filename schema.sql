@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS questions (
   video_url   TEXT,
   pdf_url     TEXT,
   pdf_page    INTEGER,
+  question_text TEXT,
   created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
